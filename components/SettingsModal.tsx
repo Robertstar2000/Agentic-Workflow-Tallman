@@ -1,10 +1,9 @@
-
-
 import React, { useEffect, useRef, useState } from 'react';
 import type { LLMSettings, ProviderSettings } from '../types';
 import { XIcon, CheckCircleIcon, XCircleIcon, SpinnerIcon } from './icons';
 import { testProviderConnection } from '../services/be-workflowService';
 import { encrypt } from '../utils/crypto';
+import type { TestResult } from '../utils/testRunner';
 
 
 interface SettingsModalProps {
@@ -114,6 +113,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
         openrouter: 'idle',
         ollama: 'idle'
     });
+    const [testRunnerStatus, setTestRunnerStatus] = useState<'idle' | 'running' | 'finished'>('idle');
+    const [testResults, setTestResults] = useState<TestResult[]>([]);
 
     useEffect(() => {
         const handleEscape = (event: KeyboardEvent) => {
@@ -176,13 +177,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
         setTimeout(() => setTestStatus(prev => ({ ...prev, [provider]: 'idle' })), 3000);
     };
 
+    const handleRunTests = async () => {
+        setTestRunnerStatus('running');
+        setTestResults([]);
+        
+        try {
+            const { allTestSuites } = await import('../tests/index');
+            const { runTests } = await import('../utils/testRunner');
+            const results = await runTests(allTestSuites);
+            setTestResults(results);
+        } catch(e) {
+             console.error("Failed to run tests:", e);
+             setTestResults([{ suite: 'Test Runner', name: 'Initialization', passed: false, error: (e as Error).message }]);
+        } finally {
+            setTestRunnerStatus('finished');
+        }
+    };
+
+
     const providers: LLMSettings['provider'][] = ['google', 'openai', 'claude', 'openrouter', 'ollama'];
+
+    const passedCount = testResults.filter(r => r.passed).length;
+    const failedCount = testResults.length - passedCount;
 
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fade-in">
             <div ref={modalRef} className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-lg p-6 backdrop-blur-lg">
                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-xl font-semibold">LLM Provider Settings</h2>
+                    <h2 className="text-xl font-semibold">Settings</h2>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10">
                         <XIcon className="w-6 h-6 text-text-muted" />
                     </button>
@@ -213,6 +235,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
                             testStatus={testStatus[activeProvider]}
                         />
                     </div>
+                </div>
+                <div className="mt-6 pt-6 border-t border-border-muted">
+                    <h3 className="text-lg font-semibold">System Diagnostics</h3>
+                    <p className="text-sm text-text-muted mt-1 mb-4">
+                        Run unit and integration tests to verify system components are working correctly.
+                    </p>
+                    <button
+                        onClick={handleRunTests}
+                        disabled={testRunnerStatus === 'running'}
+                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-border-muted rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                    >
+                        {testRunnerStatus === 'running' ? (
+                            <>
+                                <SpinnerIcon className="w-4 h-4 animate-spin" />
+                                Running Tests...
+                            </>
+                        ) : "Run All Tests"}
+                    </button>
+
+                    {testRunnerStatus === 'finished' && (
+                        <div className="mt-4 max-h-64 overflow-y-auto bg-black/30 p-3 rounded-md animate-fade-in">
+                            <div className={`flex items-center gap-2 font-semibold mb-3 pb-2 border-b border-border-muted ${failedCount > 0 ? 'text-error' : 'text-success'}`}>
+                                {failedCount > 0 ? <XCircleIcon className="w-5 h-5" /> : <CheckCircleIcon className="w-5 h-5" />}
+                                <span>{passedCount} passed, {failedCount} failed</span>
+                            </div>
+
+                            {failedCount > 0 && (
+                                <div className="space-y-2 text-sm">
+                                    <h4 className="font-semibold text-text-secondary">Failures:</h4>
+                                    <ul className="space-y-2">
+                                        {testResults.filter(r => !r.passed).map((result, i) => (
+                                            <li key={i} className="p-2 bg-red-900/40 rounded">
+                                                <p className="font-semibold text-red-300">[{result.suite}] {result.name}</p>
+                                                <pre className="text-xs text-red-200 whitespace-pre-wrap font-mono mt-1">
+                                                    {result.error}
+                                                </pre>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                             {failedCount === 0 && (
+                                 <p className="text-sm text-success">All tests passed successfully!</p>
+                             )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

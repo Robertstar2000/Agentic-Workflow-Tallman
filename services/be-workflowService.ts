@@ -136,7 +136,7 @@ const _runGoogleWorkflow = async (currentState: WorkflowState, settings: Provide
     }
 };
 
-const _runOllamaWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
+const _runOllamaWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
     const url = `${settings.baseURL}/api/generate`;
     const prompt = getSystemPrompt(currentState, ragContent);
     const body = {
@@ -145,7 +145,7 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
         format: 'json',
         stream: false,
     };
-    const response = await fetch(url, {
+    const response = await fetchFn(url, {
         method: 'POST',
         body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json' },
@@ -163,7 +163,7 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
     }
 };
 
-const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
+const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
     if (!settings.apiKey) {
         throw new Error(`API key is missing for ${settings.baseURL}.`);
     }
@@ -179,7 +179,7 @@ const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: Provide
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${settings.apiKey}`
     };
-    const response = await fetch(url, {
+    const response = await fetchFn(url, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(body)
@@ -197,7 +197,7 @@ const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: Provide
     }
 };
 
-const _runClaudeWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
+const _runClaudeWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
     if (!settings.apiKey) {
         throw new Error("API key is missing for Claude provider.");
     }
@@ -231,7 +231,7 @@ You MUST respond with only the raw JSON object representing the full, updated wo
         'anthropic-version': '2023-06-01'
     };
     
-    const response = await fetch(url, {
+    const response = await fetchFn(url, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify(body)
@@ -256,9 +256,9 @@ You MUST respond with only the raw JSON object representing the full, updated wo
     }
 };
 
-const _runOpenRouterWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
+const _runOpenRouterWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
     // OpenRouter uses the OpenAI-compatible API
-    return _runOpenAIWorkflow(currentState, settings, ragContent);
+    return _runOpenAIWorkflow(currentState, settings, ragContent, fetchFn);
 };
 
 /**
@@ -306,11 +306,13 @@ const _executeRAG = (query: string, content: string): string => {
  * @param {WorkflowState} currentState - The state of the workflow before the iteration.
  * @param {LLMSettings} settings - The configured LLM provider settings.
  * @param {string} [ragContent] - Optional knowledge content for the RAG system.
+ * @param {typeof fetch} [fetchOverride] - Optional fetch implementation for testing.
  * @returns {Promise<WorkflowState>} The workflow state after the iteration.
  */
-export const runWorkflowIteration = async (currentState: WorkflowState, settings: LLMSettings, ragContent?: string): Promise<WorkflowState> => {
+export const runWorkflowIteration = async (currentState: WorkflowState, settings: LLMSettings, ragContent?: string, fetchOverride?: typeof fetch): Promise<WorkflowState> => {
     const provider = settings.provider;
     const providerSettings = settings[provider];
+    const fetchFn = fetchOverride || fetch;
     
     let newState: WorkflowState;
 
@@ -319,16 +321,16 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
             newState = await _runGoogleWorkflow(currentState, providerSettings, ragContent);
             break;
         case 'ollama':
-            newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent);
+            newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn);
             break;
         case 'openai':
-            newState = await _runOpenAIWorkflow(currentState, providerSettings, ragContent);
+            newState = await _runOpenAIWorkflow(currentState, providerSettings, ragContent, fetchFn);
             break;
         case 'claude':
-            newState = await _runClaudeWorkflow(currentState, providerSettings, ragContent);
+            newState = await _runClaudeWorkflow(currentState, providerSettings, ragContent, fetchFn);
             break;
         case 'openrouter':
-            newState = await _runOpenRouterWorkflow(currentState, providerSettings, ragContent);
+            newState = await _runOpenRouterWorkflow(currentState, providerSettings, ragContent, fetchFn);
             break;
         default:
             throw new Error(`Unsupported provider: ${provider}`);
@@ -354,12 +356,14 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
 /**
  * Tests the connection to the currently configured LLM provider to ensure settings are valid.
  * @param {LLMSettings} settings - The LLM settings to test.
+ * @param {typeof fetch} [fetchOverride] - Optional fetch implementation for testing.
  * @returns {Promise<boolean>} A promise that resolves to true if the connection is successful.
  * @throws {Error} Throws an error if the connection fails.
  */
-export const testProviderConnection = async (settings: LLMSettings): Promise<boolean> => {
+export const testProviderConnection = async (settings: LLMSettings, fetchOverride?: typeof fetch): Promise<boolean> => {
     const provider = settings.provider;
     const providerSettings = settings[provider];
+    const fetchFn = fetchOverride || fetch;
 
     try {
         switch (provider) {
@@ -369,7 +373,7 @@ export const testProviderConnection = async (settings: LLMSettings): Promise<boo
                 return true;
             case 'ollama':
                 const ollamaUrl = `${providerSettings.baseURL}/api/tags`;
-                const ollamaResp = await fetch(ollamaUrl);
+                const ollamaResp = await fetchFn(ollamaUrl);
                 if (!ollamaResp.ok) throw new Error(`Ollama connection failed: ${ollamaResp.statusText}`);
                 const ollamaData = await ollamaResp.json();
                 return Array.isArray(ollamaData.models);
@@ -378,7 +382,7 @@ export const testProviderConnection = async (settings: LLMSettings): Promise<boo
                  if (!providerSettings.apiKey) throw new Error("API Key is missing.");
                 const url = `${providerSettings.baseURL}/models`;
                 const headers = { 'Authorization': `Bearer ${providerSettings.apiKey}` };
-                const resp = await fetch(url, { headers });
+                const resp = await fetchFn(url, { headers });
                 if (!resp.ok) throw new Error(`Connection failed: ${resp.statusText}`);
                 await resp.json();
                 return true;
@@ -386,7 +390,7 @@ export const testProviderConnection = async (settings: LLMSettings): Promise<boo
                  if (!providerSettings.apiKey) throw new Error("API Key is missing.");
                 const claudeUrl = `${providerSettings.baseURL}/messages`;
                 const claudeHeaders = { 'x-api-key': providerSettings.apiKey, 'anthropic-version': '2023-06-01' };
-                 const claudeResp = await fetch(claudeUrl, { method: 'POST', headers: claudeHeaders, body: JSON.stringify({ model: providerSettings.model, max_tokens: 1, messages: [{role: 'user', content: 'test'}]}) });
+                 const claudeResp = await fetchFn(claudeUrl, { method: 'POST', headers: claudeHeaders, body: JSON.stringify({ model: providerSettings.model, max_tokens: 1, messages: [{role: 'user', content: 'test'}]}) });
                 // Claude returns 400 for a bad request but it means auth is ok. 401/403 is a failure.
                 if (claudeResp.status === 401 || claudeResp.status === 403) throw new Error(`Connection failed: ${claudeResp.statusText}`);
                 return true;
