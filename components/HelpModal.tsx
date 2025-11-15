@@ -6,32 +6,47 @@ interface HelpModalProps {
     onClose: () => void;
 }
 
-// Simple markdown to HTML converter
-const parseMarkdown = (text: string) => {
-    return text
-        .split('\n')
-        .map(line => {
-            if (line.startsWith('### ')) {
-                return `<h3>${line.substring(4)}</h3>`;
+// A more robust markdown-to-HTML converter
+const parseMarkdown = (text: string): string => {
+    const lines = text.split('\n');
+    const htmlElements: string[] = [];
+    let listItems: string[] = [];
+
+    const flushList = () => {
+        if (listItems.length > 0) {
+            htmlElements.push(`<ul>${listItems.join('')}</ul>`);
+            listItems = [];
+        }
+    };
+
+    for (const line of lines) {
+        // Process inline styles first
+        let processedLine = line
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/`(.*?)`/g, '<code class="bg-slate-700/50 px-1 py-0.5 rounded-sm font-mono text-sm">$1</code>');
+
+        if (processedLine.startsWith('### ')) {
+            flushList();
+            htmlElements.push(`<h3>${processedLine.substring(4)}</h3>`);
+        } else if (processedLine.startsWith('#### ')) {
+            flushList();
+            htmlElements.push(`<h4>${processedLine.substring(5)}</h4>`);
+        } else if (processedLine.trim() === '---') {
+            flushList();
+            htmlElements.push('<hr class="border-border-muted my-4" />');
+        } else if (processedLine.startsWith('*   ')) {
+            listItems.push(`<li class="list-disc ml-5 my-1">${processedLine.substring(4)}</li>`);
+        } else {
+            flushList();
+            if (processedLine.trim() !== '') {
+                htmlElements.push(`<p class="text-text-secondary leading-relaxed">${processedLine}</p>`);
             }
-            if (line.startsWith('#### ')) {
-                return `<h4>${line.substring(5)}</h4>`;
-            }
-            if (line.trim() === '---') {
-                return '<hr class="border-border-muted my-4" />';
-            }
-            if (line.startsWith('*   **')) { // Bold list item
-                const content = line.substring(6).replace(/\*\*:/, '**:</strong>');
-                return `<li class="ml-4 list-disc">${content}</li>`;
-            }
-             if (line.startsWith('*   ')) { // simple list item
-                return `<li class="ml-4 list-disc">${line.substring(4)}</li>`;
-            }
-            // Basic bold and italic
-            line = line.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            return `<p class="text-text-secondary leading-relaxed">${line}</p>`;
-        })
-        .join('');
+        }
+    }
+
+    flushList(); // Flush any remaining list items at the end of the document
+    
+    return htmlElements.join('');
 };
 
 
@@ -57,7 +72,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ onClose }) => {
 
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div ref={modalRef} className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-3xl h-[80vh] flex flex-col p-6 backdrop-blur-sm">
+            <div ref={modalRef} className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-3xl h-[80vh] flex flex-col p-6 backdrop-blur-lg">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0">
                     <h2 className="text-xl font-semibold">Help & Instructions</h2>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10">

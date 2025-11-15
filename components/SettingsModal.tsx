@@ -1,8 +1,9 @@
 
+
 import React, { useEffect, useRef, useState } from 'react';
 import type { LLMSettings, ProviderSettings } from '../types';
 import { XIcon, CheckCircleIcon, XCircleIcon, SpinnerIcon } from './icons';
-import { testProviderConnection } from '../services/geminiService';
+import { testProviderConnection } from '../services/be-workflowService';
 import { encrypt } from '../utils/crypto';
 
 
@@ -159,7 +160,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
 
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div ref={modalRef} className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-lg p-6 backdrop-blur-sm">
+            <div ref={modalRef} className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-lg p-6 backdrop-blur-lg">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-semibold">LLM Provider Settings</h2>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10">

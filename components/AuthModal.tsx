@@ -17,7 +17,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onAuthenticated }
 
     return (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 animate-fade-in">
-            <div className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-md p-6 backdrop-blur-sm">
+            <div className="bg-card-bg border border-border-muted rounded-xl shadow-2xl w-full max-w-md p-6 backdrop-blur-lg">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-semibold">Authentication Required</h2>
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10">
@@ -55,7 +55,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onAuthenticated }
                         <label htmlFor="password-auth" className="block text-sm font-medium text-text-secondary mb-1">Password</label>
                         <input type="password" id="password-auth" placeholder="••••••••" className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start" />
                     </div>
-                    <button type="submit" className="w-full flex items-center justify-center gap-2 px-8 py-3 font-semibold text-white bg-gradient-to-r from-primary-start to-primary-end rounded-full shadow-lg hover:shadow-primary-end/50 transition-all duration-300 transform hover:scale-105">
+                    <button type="submit" className="w-full flex items-center justify-center gap-2 px-8 py-3 font-semibold text-white bg-gradient-to-r from-primary-start to-primary-end rounded-full shadow-lg hover:shadow-primary-end/40 transition-all duration-300 transform hover:scale-105">
                         <UserIcon className="w-5 h-5" />
                         <span>Sign In</span>
                     </button>

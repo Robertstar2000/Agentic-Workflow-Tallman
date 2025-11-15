@@ -107,7 +107,7 @@ const StatusIndicator: React.FC<{ status: WorkflowStatus }> = ({ status }) => {
 
 
 const AgentStatusPanel: React.FC<{ state: WorkflowState }> = ({ state }) => (
-    <div className="bg-slate-900/70 border border-border-muted rounded-lg p-4 flex flex-wrap gap-4 justify-between items-center">
+    <div className="bg-card-bg border border-border-muted rounded-xl p-4 flex flex-wrap gap-4 justify-between items-center backdrop-blur-lg">
         <div>
             <p className="text-sm text-text-muted">Agent</p>
             <p className="font-semibold text-text-primary">Workflow Agent</p>
@@ -120,14 +120,14 @@ const AgentStatusPanel: React.FC<{ state: WorkflowState }> = ({ state }) => (
             <p className="text-sm text-text-muted">Iteration</p>
             <p className="font-semibold text-text-primary">{state.currentIteration} / {state.maxIterations}</p>
         </div>
-         <div className="w-full bg-slate-700 rounded-full h-2.5 mt-2">
+         <div className="w-full bg-slate-800 rounded-full h-2.5 mt-2">
             <div className="bg-gradient-to-r from-primary-start to-primary-end h-2.5 rounded-full" style={{ width: `${(state.currentIteration / state.maxIterations) * 100}%` }}></div>
         </div>
     </div>
 );
 
 const ResultCard: React.FC<{ title: string; children: React.ReactNode; className?: string; actions?: React.ReactNode }> = ({ title, children, className = '', actions }) => (
-    <div className={`bg-slate-900/70 border border-border-muted rounded-lg p-4 ${className}`}>
+    <div className={`bg-card-bg border border-border-muted rounded-xl p-4 backdrop-blur-lg shadow-lg ${className}`}>
         <div className="flex justify-between items-center border-b border-border-muted pb-2 mb-3">
             <h3 className="text-lg font-semibold text-text-secondary">{title}</h3>
             {actions && <div>{actions}</div>}

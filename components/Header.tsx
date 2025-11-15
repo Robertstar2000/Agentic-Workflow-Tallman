@@ -13,7 +13,7 @@ export const Header: React.FC<HeaderProps> = ({ isAuthenticated, onLoginClick, o
     return (
         <header className="flex justify-between items-center pb-4 border-b border-border-muted">
             <div>
-                <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-text-primary tracking-tight">AI Workflow System</h1>
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-primary-start to-primary-end tracking-tight">Super Agentic Workflow System</h1>
                 <div 
                     className="flex items-center gap-2 mt-2 text-sm"
                 >

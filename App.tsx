@@ -5,10 +5,11 @@ import { ResultsDisplay } from './components/ResultsDisplay';
 import { SettingsModal } from './components/SettingsModal';
 import { AuthModal } from './components/AuthModal';
 import { HelpModal } from './components/HelpModal';
-import { runWorkflowIteration } from './services/geminiService';
+import { runWorkflowIteration } from './services/be-workflowService';
 import type { LLMSettings, WorkflowState } from './types';
 import { Tip } from './components/Tip';
 import { decrypt } from './utils/crypto';
+import { Footer } from './components/Footer';
 
 
 const DEFAULT_SETTINGS: LLMSettings = {
@@ -62,22 +63,29 @@ const App: React.FC = () => {
         loadSettings();
     }, []);
 
-    const handleRunWorkflow = useCallback(async () => {
-        if (!goal.trim()) {
+    const handleRunWorkflow = useCallback(async (overrides?: { goal?: string; maxIterations?: number }) => {
+        const effectiveGoal = overrides?.goal ?? goal;
+        const effectiveMaxIterations = overrides?.maxIterations ?? maxIterations;
+
+        if (!effectiveGoal.trim()) {
             setError('Please enter a goal.');
             return;
         }
         setIsRunning(true);
         setError(null);
+        
+        // If overrides were passed, update the state for UI consistency
+        if (overrides?.goal) setGoal(overrides.goal);
+        if (overrides?.maxIterations) setMaxIterations(overrides.maxIterations);
 
         let currentState: WorkflowState = {
-            goal,
-            maxIterations,
+            goal: effectiveGoal,
+            maxIterations: effectiveMaxIterations,
             currentIteration: 0,
             status: 'running',
             runLog: [],
             state: {
-                goal,
+                goal: effectiveGoal,
                 steps: [],
                 artifacts: [],
                 notes: 'Initial state. Planner needs to create steps.',
@@ -89,7 +97,7 @@ const App: React.FC = () => {
         setWorkflowState(currentState);
 
         try {
-            for (let i = 1; i <= maxIterations; i++) {
+            for (let i = 1; i <= effectiveMaxIterations; i++) {
                 const newState = await runWorkflowIteration(currentState, settings);
                 
                 currentState = { ...newState, currentIteration: i };
@@ -109,9 +117,41 @@ const App: React.FC = () => {
         }
     }, [goal, maxIterations, settings]);
 
+    const handleRunWorkflowFromFile = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const text = e.target?.result;
+                if (typeof text !== 'string') {
+                    throw new Error("Failed to read file content.");
+                }
+                const data = JSON.parse(text);
+
+                const goalFromFile = data.goal || data.state?.goal;
+                const maxIterationsFromFile = data.maxIterations;
+
+                if (typeof goalFromFile !== 'string' || !goalFromFile.trim()) {
+                    throw new Error("Input JSON must contain a non-empty 'goal' string.");
+                }
+                
+                await handleRunWorkflow({
+                    goal: goalFromFile,
+                    maxIterations: (maxIterationsFromFile && typeof maxIterationsFromFile === 'number') ? maxIterationsFromFile : undefined
+                });
+
+            } catch (err) {
+                setError(err instanceof Error ? `Error processing file: ${err.message}` : 'An unknown error occurred while processing the file.');
+            }
+        };
+        reader.onerror = () => {
+            setError(`Failed to read the file: ${reader.error?.message}`);
+        };
+        reader.readAsText(file);
+    };
+
     return (
-        <div className="min-h-screen p-4 sm:p-6 md:p-8 flex flex-col items-center">
-            <div className="w-full max-w-5xl mx-auto">
+        <div className="min-h-screen p-4 sm:p-6 md:p-8 flex flex-col">
+            <div className="w-full max-w-5xl mx-auto flex-grow">
                 <Header 
                     isAuthenticated={isAuthenticated} 
                     onLoginClick={() => setIsAuthModalOpen(true)}
@@ -120,7 +160,7 @@ const App: React.FC = () => {
                     onHelpClick={() => setIsHelpModalOpen(true)}
                 />
                 <main className="mt-8">
-                    <div className="bg-card-bg border border-border-muted rounded-xl shadow-2xl p-6 backdrop-blur-sm">
+                    <div className="bg-card-bg border border-border-muted rounded-xl shadow-2xl p-6 backdrop-blur-lg">
                         <WorkflowInput
                             goal={goal}
                             setGoal={setGoal}
@@ -128,7 +168,8 @@ const App: React.FC = () => {
                             setMaxIterations={setMaxIterations}
                             isRunning={isRunning}
                             isAuthenticated={isAuthenticated}
-                            onRunWorkflow={handleRunWorkflow}
+                            onRunWorkflow={() => handleRunWorkflow()}
+                            onRunWorkflowFromFile={handleRunWorkflowFromFile}
                             onLoginClick={() => setIsAuthModalOpen(true)}
                         />
                         <Tip />
@@ -152,6 +193,7 @@ const App: React.FC = () => {
                     </div>
                 </main>
             </div>
+            <Footer />
             {isSettingsOpen && (
                 <SettingsModal 
                     settings={settings}
