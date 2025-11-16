@@ -88,7 +88,7 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
         2.  **Generate README:** Create a comprehensive \`README.md\` file as a new artifact. This file is the primary deliverable. Its content should be professionally formatted and inspired by high-quality open-source projects (like \`cline/cline\` on GitHub). It MUST include:
             -   A clear title and a concise one-sentence summary of the project.
             -   An "Overview" section explaining the project's purpose and key features.
-            // FIX: The unescaped backticks in the following line caused a syntax error in the template literal, which was reported as a reference error for `resultType`. They have been properly escaped.
+            // FIX: Escaped backticks in the following template literal to prevent a syntax error where `resultType` was being interpreted as a variable.
             -   A "Getting Started" or "Usage" section with instructions. If \`resultType\` is "code", this means installation (\`npm install\`) and execution (\`npm run dev\`) commands. If \`resultType\` is "text", this means explaining the findings or how to read the report.
             -   A "Technical Details" or "Methodology" section if applicable, detailing architecture or dependencies.
         3.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.

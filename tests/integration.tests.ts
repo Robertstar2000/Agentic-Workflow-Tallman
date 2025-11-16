@@ -54,7 +54,6 @@ export const runIntegrationTests = () => {
                 } as any;
             };
 
-            // FIX: Added missing properties to conform to LLMSettings type.
             const settings: LLMSettings = {
                 provider: 'openai',
                 openai: { apiKey: 'test-key', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
@@ -72,6 +71,107 @@ export const runIntegrationTests = () => {
             expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
         });
 
+        it('should call the Claude provider correctly', async () => {
+            let fetchCalled = false;
+            const mockFetch = async (url: any, options: any) => {
+                fetchCalled = true;
+                expect(url).toBe('https://api.anthropic.com/v1/messages');
+                const body = JSON.parse(options.body);
+                expect(body.model).toBe('claude-3-opus-20240229');
+                expect(options.headers['x-api-key']).toBe('claude-test-key');
+        
+                return {
+                    ok: true,
+                    json: async () => ({
+                        content: [{ text: JSON.stringify(MOCK_LLM_RESPONSE) }]
+                    })
+                } as any;
+            };
+        
+            const settings: LLMSettings = {
+                provider: 'claude',
+                claude: { apiKey: 'claude-test-key', model: 'claude-3-opus-20240229', baseURL: 'https://api.anthropic.com/v1' },
+                google: { model: 'gemini-2.5-pro' },
+                openai: { apiKey: '', model: ''},
+                openrouter: { apiKey: '', model: ''},
+                ollama: { model: ''},
+                groq: { apiKey: '', model: '' },
+                samba: { apiKey: '', model: '' },
+                cerberus: { apiKey: '', model: '' },
+            };
+        
+            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
+            expect(fetchCalled).toBeTruthy();
+            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
+        });
+
+        it('should call the Ollama provider correctly', async () => {
+            let fetchCalled = false;
+            const mockFetch = async (url: any, options: any) => {
+                fetchCalled = true;
+                expect(url).toBe('http://localhost:11434/api/generate');
+                const body = JSON.parse(options.body);
+                expect(body.model).toBe('llama3');
+                expect(body.format).toBe('json');
+        
+                return {
+                    ok: true,
+                    json: async () => ({
+                        response: JSON.stringify(MOCK_LLM_RESPONSE)
+                    })
+                } as any;
+            };
+        
+            const settings: LLMSettings = {
+                provider: 'ollama',
+                ollama: { model: 'llama3', baseURL: 'http://localhost:11434' },
+                google: { model: 'gemini-2.5-pro' },
+                openai: { apiKey: '', model: ''},
+                claude: { apiKey: '', model: ''},
+                openrouter: { apiKey: '', model: ''},
+                groq: { apiKey: '', model: '' },
+                samba: { apiKey: '', model: '' },
+                cerberus: { apiKey: '', model: '' },
+            };
+        
+            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
+            expect(fetchCalled).toBeTruthy();
+            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
+        });
+
+        it('should call the Groq provider correctly', async () => {
+            let fetchCalled = false;
+            const mockFetch = async (url: any, options: any) => {
+                fetchCalled = true;
+                expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
+                const body = JSON.parse(options.body);
+                expect(body.model).toBe('llama3-70b-8192');
+                expect(options.headers['Authorization']).toBe('Bearer groq-test-key');
+
+                return {
+                    ok: true,
+                    json: async () => ({
+                        choices: [{ message: { content: JSON.stringify(MOCK_LLM_RESPONSE) } }]
+                    })
+                } as any;
+            };
+
+            const settings: LLMSettings = {
+                provider: 'groq',
+                groq: { apiKey: 'groq-test-key', model: 'llama3-70b-8192', baseURL: 'https://api.groq.com/openai/v1' },
+                google: { model: 'gemini-2.5-pro' },
+                claude: { apiKey: '', model: ''},
+                openai: { apiKey: '', model: ''},
+                openrouter: { apiKey: '', model: ''},
+                ollama: { model: ''},
+                samba: { apiKey: '', model: '' },
+                cerberus: { apiKey: '', model: '' },
+            };
+
+            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
+            expect(fetchCalled).toBeTruthy();
+            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
+        });
 
         it('should handle the RAG flow correctly', async () => {
             const stateWithRagQuery: WorkflowState = {
@@ -97,7 +197,6 @@ export const runIntegrationTests = () => {
             } as any);
 
 
-            // FIX: Added missing properties to conform to LLMSettings type.
             const settings: LLMSettings = {
                 provider: 'openai',
                 openai: { apiKey: 'test-key', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },

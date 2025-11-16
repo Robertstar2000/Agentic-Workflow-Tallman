@@ -30,3 +30,35 @@ The system operates on a continuous loop of three distinct AI agents:
 3.  **The QA Agent:** Compares the work done against the original goal. It either approves the work and marks the workflow as complete, or it provides detailed feedback for the Planner to use in the next iteration.
 
 This cycle repeats, allowing the system to tackle complex problems that would be impossible in a single pass.
+
+### 💡 Programmatic Usage (API)
+
+While the system does not expose a traditional REST API, you can trigger workflows programmatically by crafting a JSON file and using the **"Run from File"** feature. This provides a powerful way to integrate the workflow system into other scripts or processes.
+
+#### API Format
+
+The input must be a JSON file containing at least a `goal`. You can optionally specify `maxIterations`.
+
+```json
+{
+  "goal": "Your detailed objective, such as 'Create a React component that fetches and displays user data from a placeholder API'.",
+  "maxIterations": 50
+}
+```
+
+#### Example
+
+Here is a complete example file, which you could save as `my-workflow.json`:
+
+```json
+{
+  "goal": "Generate a Python script that analyzes a CSV file named 'sales_data.csv'. The script should calculate the total sales per product category and output a new CSV file named 'summary.csv'.",
+  "maxIterations": 25
+}
+```
+
+#### How to Use
+
+1.  Create a `.json` file with the content structured as shown above.
+2.  In the application, click the **"Run from File"** button.
+3.  Select your JSON file. The workflow will start immediately using the goal and parameters you defined.
