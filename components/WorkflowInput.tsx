@@ -27,6 +27,10 @@ interface WorkflowInputProps {
     ragContentProvided: boolean;
     /** Callback to open the login modal. */
     onLoginClick: () => void;
+    /** The current guidance mode ('auto' or 'human'). */
+    guidanceMode: 'auto' | 'human';
+    /** Callback to set the guidance mode. */
+    setGuidanceMode: (mode: 'auto' | 'human') => void;
 }
 
 /**
@@ -46,6 +50,8 @@ export const WorkflowInput: React.FC<WorkflowInputProps> = ({
     onUploadKnowledge,
     ragContentProvided,
     onLoginClick,
+    guidanceMode,
+    setGuidanceMode,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
@@ -87,18 +93,39 @@ export const WorkflowInput: React.FC<WorkflowInputProps> = ({
                         disabled={isRunning}
                     />
                 </div>
-                <div>
-                    <label htmlFor="iterations" className="block text-sm font-medium text-text-secondary mb-1">Max iterations</label>
-                    <input
-                        type="number"
-                        id="iterations"
-                        value={maxIterations}
-                        onChange={(e) => setMaxIterations(Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)))}
-                        min="1"
-                        max="200"
-                        className="w-full p-3 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start transition-shadow"
-                        disabled={isRunning}
-                    />
+                 <div className="flex flex-col gap-4">
+                    <div>
+                        <label htmlFor="iterations" className="block text-sm font-medium text-text-secondary mb-1">Max iterations</label>
+                        <input
+                            type="number"
+                            id="iterations"
+                            value={maxIterations}
+                            onChange={(e) => setMaxIterations(Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)))}
+                            min="1"
+                            max="200"
+                            className="w-full p-3 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start transition-shadow"
+                            disabled={isRunning}
+                        />
+                    </div>
+                     <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-1">Mode</label>
+                        <div className="flex items-center bg-slate-900/70 border border-border-muted rounded-lg p-1">
+                            <button 
+                                onClick={() => setGuidanceMode('auto')}
+                                disabled={isRunning}
+                                className={`flex-1 text-center text-sm py-1.5 rounded-md transition-colors ${guidanceMode === 'auto' ? 'bg-primary-start/80 text-white font-semibold' : 'text-text-muted hover:bg-white/5'}`}
+                            >
+                                Auto
+                            </button>
+                            <button 
+                                onClick={() => setGuidanceMode('human')}
+                                disabled={isRunning}
+                                className={`flex-1 text-center text-sm py-1.5 rounded-md transition-colors ${guidanceMode === 'human' ? 'bg-primary-start/80 text-white font-semibold' : 'text-text-muted hover:bg-white/5'}`}
+                            >
+                                Human Guided
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div className="flex justify-center items-center gap-4 flex-wrap">

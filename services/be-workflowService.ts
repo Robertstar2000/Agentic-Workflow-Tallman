@@ -4,6 +4,29 @@ import type { LLMSettings, WorkflowState, ProviderSettings } from "../types";
 const GOOGLE_API_KEY = process.env.API_KEY;
 
 /**
+ * Creates a summarized and truncated version of the workflow state to be used in the LLM prompt,
+ * preventing the context from growing too large.
+ * @param {WorkflowState} state - The full current state of the workflow.
+ * @returns {object} A sanitized state object suitable for including in the prompt.
+ */
+const prepareStateForPrompt = (state: WorkflowState): object => {
+    const stateForPrompt = JSON.parse(JSON.stringify(state)); // Deep copy
+
+    const MAX_LOG_ENTRIES = 10;
+
+    // Truncate runLog, keeping the most recent entries
+    if (stateForPrompt.runLog.length > MAX_LOG_ENTRIES) {
+        stateForPrompt.runLog = stateForPrompt.runLog.slice(-MAX_LOG_ENTRIES);
+    }
+
+    // These are output fields and not needed for the model's next turn.
+    delete stateForPrompt.finalResultMarkdown;
+    delete stateForPrompt.finalResultSummary;
+
+    return stateForPrompt;
+};
+
+/**
  * Generates the system prompt for the LLM based on the current workflow state.
  * @param {WorkflowState} currentState - The current state of the workflow.
  * @param {string} [ragContent] - Optional content from a knowledge document for RAG.
@@ -30,26 +53,37 @@ To search the document, act as the Worker and create an artifact with the key \`
 After creating the artifact, end your turn by updating the 'notes' field to indicate you are waiting for search results. The system will perform the search, and the results will be available in an artifact named \`rag_results\` in the next iteration. Do not try to create the \`rag_results\` artifact yourself.
 ` : '';
 
+    const stateForPrompt = prepareStateForPrompt(currentState);
+
     return `${contextReminder}
 You are an intelligent automation platform executing a complex, multi-step workflow.
 Your goal is to achieve the user's objective by breaking it down into steps and iterating until completion.
 You operate in a loop of three agents: Planner, Worker, and QA.
 ${ragInstruction}
+**Context Management Rules:**
+Your context window is limited. To ensure the workflow runs smoothly, you MUST adhere to the following rules for managing artifact size:
+- **Code Artifacts:** When generating code, limit snippets to a maximum of 500 lines. If a file needs to be larger, you MUST instruct the Planner to add new steps to create multiple smaller files and use imports/includes to connect them.
+- **Text Artifacts:** If you are generating a large text document (e.g., a report, research notes), you MUST summarize it if the full text is not essential for the next immediate step. Store the full text in one artifact and create a separate artifact with a summary (e.g., 'report.md' and 'report_summary.md'). This helps keep the context for subsequent steps clean and focused.
+- **Focus:** For each turn, focus on the user's main goal, the current step in the plan, feedback from other agents (in 'notes'), and the most recent log entries.
+
 **Workflow Execution Flow:**
 
 1.  **Planner:** Your first task is always to act as the Planner. Analyze the goal and the current state.
     -   **First Run:** If the 'steps' array is empty, this is the first planning phase. You MUST create a detailed, ordered list of steps to achieve the goal and populate the 'steps' array. At the same time, you MUST copy this initial list of steps into a new field called 'initialPlan'.
+    -   **Final Consolidation Step:** Your plan MUST conclude with a final step to consolidate all work. Examples: 'Consolidate all generated code into a final directory structure.', 'Combine all research notes into a final summary document.', or 'Organize all data into a final CSV spreadsheet.' This step is mandatory.
     -   **Subsequent Runs:** If 'steps' already exist, find the next incomplete step from the list. You MUST update the 'progress' field with the text "Working on step X..." where X is the 1-based index of that step. For example, if you are starting the second step, the progress MUST be "Working on step 2...". Only update the 'steps' list if the plan needs to change. After setting the progress, log your action to the run log.
     -   **Crucially, the 'initialPlan' field must NEVER be modified after it is first created.** It serves as a permanent record of the original strategy.
-2.  **Worker:** After the Planner, you act as the Worker. Execute the current step defined by the Planner. You can create or modify 'artifacts'. **Crucially, if a step involves creating a document, a piece of code, a style guide, or any other file-like asset, you MUST save this output as an artifact in the 'artifacts' array.** Use a descriptive key for the artifact, like 'styleguide.css' or 'api_documentation.md'. For complex values (objects, arrays), you MUST JSON.stringify them and store the resulting string in the 'value' field of the artifact object. Update the 'progress' field. Log your action.
+2.  **Worker:** After the Planner, you act as the Worker. Execute the current step defined by the Planner.
+    -   **CRITICAL RULE: Save All Work.** You are REQUIRED to save ANY and ALL files, documents, code snippets, or data structures you generate as an artifact. There are no exceptions. If a step involves creating something, your action MUST result in a new entry in the 'artifacts' array. Use a descriptive key for the artifact (e.g., 'final_report.md', 'component.tsx', 'style_guide.css'). Failure to do so is a critical error.
+    -   For complex values (objects, arrays), you MUST JSON.stringify them and store the resulting string in the 'value' field of the artifact object. Update the 'progress' field. Log your action.
 3.  **QA:** After the Worker, you act as the QA agent. Compare the original goal against the current state and artifacts. If the goal is fully achieved, set status to "completed" and generate the final 'finalResultMarkdown' and 'finalResultSummary'. If the goal is not met, provide specific, concrete feedback and instructions in the 'notes' field for the Planner's next iteration. Set status back to "running". If you are stuck or the goal is ambiguous, set status to "needs_clarification" and write clarifying questions in the notes.
 
 **Current State:**
 You are on iteration ${currentState.currentIteration + 1} of ${currentState.maxIterations}.
-The current state of the workflow is provided below in JSON format. Do not repeat it in your response.
+The current state of the workflow is provided below in JSON format. Note: for brevity, the run log may be truncated. Do not repeat it in your response.
 
 \`\`\`json
-${JSON.stringify(currentState, null, 2)}
+${JSON.stringify(stateForPrompt, null, 2)}
 \`\`\`
 
 **Your Task:**

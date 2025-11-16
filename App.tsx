@@ -11,6 +11,7 @@ import { Tip } from './components/Tip';
 import { decrypt } from './utils/crypto';
 import { Footer } from './components/Footer';
 import { PlanSidebar } from './components/PlanSidebar';
+import { PlanApprovalModal } from './components/PlanApprovalModal';
 
 
 const DEFAULT_SETTINGS: LLMSettings = {
@@ -38,6 +39,8 @@ const App: React.FC = () => {
     const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
     const [settings, setSettings] = useState<LLMSettings>(DEFAULT_SETTINGS);
     const [ragContent, setRagContent] = useState<string>('');
+    const [guidanceMode, setGuidanceMode] = useState<'auto' | 'human'>('auto');
+    const [isAwaitingApproval, setIsAwaitingApproval] = useState(false);
 
     useEffect(() => {
         const loadSettings = async () => {
@@ -68,41 +71,10 @@ const App: React.FC = () => {
         loadSettings();
     }, []);
 
-    const handleRunWorkflow = useCallback(async (overrides?: { goal?: string; maxIterations?: number }) => {
-        const effectiveGoal = overrides?.goal ?? goal;
-        const effectiveMaxIterations = overrides?.maxIterations ?? maxIterations;
-
-        if (!effectiveGoal.trim()) {
-            setError('Please enter a goal.');
-            return;
-        }
-        setIsRunning(true);
-        setError(null);
-        
-        // If overrides were passed, update the state for UI consistency
-        if (overrides?.goal) setGoal(overrides.goal);
-        if (overrides?.maxIterations) setMaxIterations(overrides.maxIterations);
-
-        let currentState: WorkflowState = {
-            goal: effectiveGoal,
-            maxIterations: effectiveMaxIterations,
-            currentIteration: 0,
-            status: 'running',
-            runLog: [],
-            state: {
-                goal: effectiveGoal,
-                steps: [],
-                artifacts: [],
-                notes: 'Initial state. Planner needs to create steps.',
-                progress: 'Not started',
-            },
-            finalResultMarkdown: '',
-            finalResultSummary: '',
-        };
-        setWorkflowState(currentState);
-
+    const runWorkflowLoop = async (initialState: WorkflowState, startIteration: number = 1) => {
+        let currentState = initialState;
         try {
-            for (let i = 1; i <= effectiveMaxIterations; i++) {
+            for (let i = startIteration; i <= currentState.maxIterations; i++) {
                 const newState = await runWorkflowIteration(currentState, settings, ragContent);
                 
                 currentState = { ...newState, currentIteration: i };
@@ -120,7 +92,76 @@ const App: React.FC = () => {
         } finally {
             setIsRunning(false);
         }
-    }, [goal, maxIterations, settings, ragContent]);
+    };
+
+
+    const handleRunWorkflow = useCallback(async (overrides?: { goal?: string; maxIterations?: number }) => {
+        const effectiveGoal = overrides?.goal ?? goal;
+        const effectiveMaxIterations = overrides?.maxIterations ?? maxIterations;
+
+        if (!effectiveGoal.trim()) {
+            setError('Please enter a goal.');
+            return;
+        }
+        setIsRunning(true);
+        setError(null);
+        
+        if (overrides?.goal) setGoal(overrides.goal);
+        if (overrides?.maxIterations) setMaxIterations(overrides.maxIterations);
+
+        let initialState: WorkflowState = {
+            goal: effectiveGoal,
+            maxIterations: effectiveMaxIterations,
+            currentIteration: 0,
+            status: 'running',
+            runLog: [],
+            state: {
+                goal: effectiveGoal,
+                steps: [],
+                artifacts: [],
+                notes: 'Initial state. Planner needs to create steps.',
+                progress: 'Not started',
+            },
+            finalResultMarkdown: '',
+            finalResultSummary: '',
+        };
+        setWorkflowState(initialState);
+        
+        if (guidanceMode === 'auto') {
+            await runWorkflowLoop(initialState);
+        } else { // human-guided
+            try {
+                const newState = await runWorkflowIteration(initialState, settings, ragContent);
+                const plannerState = { ...newState, currentIteration: 1 };
+                setWorkflowState(plannerState);
+
+                if (plannerState.state.steps && plannerState.state.steps.length > 0) {
+                    setIsAwaitingApproval(true);
+                } else {
+                    setError("The planner failed to generate a valid plan. Please try refining your goal and run again.");
+                }
+            } catch (err) {
+                 console.error(err);
+                setError(err instanceof Error ? err.message : 'An unknown error occurred during the planning phase.');
+                const finalState = {...initialState, status: 'error' as const, currentIteration: 1};
+                setWorkflowState(finalState);
+            } finally {
+                setIsRunning(false);
+            }
+        }
+
+    }, [goal, maxIterations, settings, ragContent, guidanceMode]);
+
+     const handlePlanApproval = () => {
+        if (!workflowState) return;
+        setIsAwaitingApproval(false);
+        setIsRunning(true);
+        runWorkflowLoop(workflowState, 2); 
+    };
+
+    const handlePlanRejection = () => {
+        setIsAwaitingApproval(false);
+    };
 
     const handleRunWorkflowFromStateFile = (file: File) => {
         const reader = new FileReader();
@@ -202,6 +243,8 @@ const App: React.FC = () => {
                                 onUploadKnowledge={handleUploadKnowledge}
                                 ragContentProvided={!!ragContent}
                                 onLoginClick={() => setIsAuthModalOpen(true)}
+                                guidanceMode={guidanceMode}
+                                setGuidanceMode={setGuidanceMode}
                             />
                             <Tip />
                         </div>
@@ -241,6 +284,13 @@ const App: React.FC = () => {
             )}
             {isHelpModalOpen && (
                 <HelpModal onClose={() => setIsHelpModalOpen(false)} />
+            )}
+            {isAwaitingApproval && workflowState && (
+                <PlanApprovalModal
+                    steps={workflowState.state.steps}
+                    onApprove={handlePlanApproval}
+                    onReject={handlePlanRejection}
+                />
             )}
         </div>
     );
