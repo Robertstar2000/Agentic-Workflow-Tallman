@@ -1,3 +1,5 @@
+
+
 import React, { useState } from 'react';
 import type { WorkflowState, WorkflowStatus, Artifact } from '../types';
 import { jsPDF } from 'jspdf';
@@ -74,7 +76,7 @@ const downloadResultAsPdf = (markdownContent: string) => {
         }
     });
 
-    doc.save('ai-workflow-result.pdf');
+    doc.save('README.pdf');
 };
 
 const StatusIndicator: React.FC<{ status: WorkflowStatus }> = ({ status }) => {
@@ -160,17 +162,17 @@ const DownloadButton: React.FC<{ onDownload: () => void; }> = ({ onDownload }) =
 export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) => {
     type Tab = 'result' | 'support' | 'log' | 'json';
     const [activeTab, setActiveTab] = useState<Tab>('result');
-    const [isFormatDropdownOpen, setIsFormatDropdownOpen] = useState(false);
     
-    const handleDownloadResult = (format: 'pdf' | 'md') => {
+    const handleDownloadResult = () => {
         if (!state.finalResultMarkdown) return;
-        if (format === 'pdf') {
+        if (state.resultType === 'text') {
             downloadResultAsPdf(state.finalResultMarkdown);
         } else {
-            downloadFile(state.finalResultMarkdown, 'ai-workflow-result.md', 'text/markdown');
+            downloadFile(state.finalResultMarkdown, 'README.md', 'text/markdown');
         }
-        setIsFormatDropdownOpen(false);
     }
+
+    const downloadButtonLabel = state.resultType === 'text' ? 'Download README.pdf' : 'Download README.md';
 
     const handleDownloadArtifact = (artifact: Artifact) => {
         let mimeType = 'text/plain;charset=utf-8';
@@ -197,9 +199,22 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
         downloadFile(artifact.value, artifact.key, mimeType);
     };
 
-    const supportArtifacts = state.state.artifacts.filter(
+    const allArtifacts = [...state.state.artifacts];
+    const hasReadmeArtifact = state.state.artifacts.some(a => a.key.toLowerCase() === 'readme.md');
+
+    // If there's a final result but no corresponding artifact, create one virtually for the list.
+    // This makes the UI more robust against the LLM not perfectly following instructions.
+    if (state.finalResultMarkdown && !hasReadmeArtifact) {
+        allArtifacts.push({
+            key: 'README.md',
+            value: state.finalResultMarkdown,
+        });
+    }
+
+    const supportArtifacts = allArtifacts.filter(
         artifact => !['rag_results'].includes(artifact.key)
     );
+
 
     const handleDownloadAllArtifacts = async () => {
         if (supportArtifacts.length === 0) return;
@@ -276,17 +291,10 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                              <div className="flex justify-between items-center">
                                 <h3 className="text-lg font-semibold text-text-secondary">Final Result</h3>
                                 {(state.finalResultMarkdown || state.status === 'completed') && (
-                                     <div className="relative">
-                                        <button onClick={() => setIsFormatDropdownOpen(prev => !prev)} className="p-1.5 rounded-md hover:bg-white/10 transition-colors flex items-center gap-1" aria-label="Download result">
-                                            <DownloadIcon className="w-5 h-5 text-text-muted" />
-                                        </button>
-                                        {isFormatDropdownOpen && (
-                                            <div className="absolute right-0 mt-2 w-32 bg-slate-800 border border-border-muted rounded-md shadow-lg z-10">
-                                                <a onClick={() => handleDownloadResult('pdf')} className="block px-4 py-2 text-sm text-text-secondary hover:bg-primary-start/20 cursor-pointer">Download as .pdf</a>
-                                                <a onClick={() => handleDownloadResult('md')} className="block px-4 py-2 text-sm text-text-secondary hover:bg-primary-start/20 cursor-pointer">Download as .md</a>
-                                            </div>
-                                        )}
-                                    </div>
+                                     <button onClick={handleDownloadResult} className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md hover:bg-white/10 transition-colors border border-border-muted text-text-muted disabled:opacity-50" aria-label="Download result">
+                                        <DownloadIcon className="w-5 h-5" />
+                                        <span>{downloadButtonLabel}</span>
+                                    </button>
                                 )}
                             </div>
                             {state.finalResultMarkdown ? (

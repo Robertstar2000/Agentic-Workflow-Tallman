@@ -23,6 +23,8 @@ const prepareStateForPrompt = (state: WorkflowState): object => {
     // These are output fields and not needed for the model's next turn.
     delete stateForPrompt.finalResultMarkdown;
     delete stateForPrompt.finalResultSummary;
+    delete stateForPrompt.resultType;
+
 
     return stateForPrompt;
 };
@@ -81,15 +83,17 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
 3.  **QA:** After the Worker, you act as the QA agent.
     -   **Review:** Compare the original goal against the current state and artifacts.
     -   **If Not Complete:** If the goal is not met, provide specific, concrete feedback and instructions in the 'notes' field for the Planner's next iteration. Set status back to "running". If you are stuck or the goal is ambiguous, set status to "needs_clarification" and write clarifying questions in the notes.
-    -   **If Complete:** If the goal is fully achieved, you MUST perform the following final steps:
-        1.  **Generate README:** Create a comprehensive \`README.md\` file as a new artifact. This file is the primary deliverable. Its content should be professionally formatted and inspired by high-quality open-source projects (like \`cline/cline\` on GitHub). It MUST include:
+    -   **If Complete:** If the goal is fully achieved, you MUST perform the following final steps in order:
+        1.  **Categorize Result:** First, determine if the primary output is 'code' (e.g., a software project, scripts) or 'text' (e.g., a report, analysis, story). Set the \`resultType\` field in the root of the state object to either "code" or "text". This field is mandatory for a completed status.
+        2.  **Generate README:** Create a comprehensive \`README.md\` file as a new artifact. This file is the primary deliverable. Its content should be professionally formatted and inspired by high-quality open-source projects (like \`cline/cline\` on GitHub). It MUST include:
             -   A clear title and a concise one-sentence summary of the project.
             -   An "Overview" section explaining the project's purpose and key features.
-            -   A "Getting Started" or "Usage" section with instructions. For code, this means installation (\`npm install\`) and execution (\`npm run dev\`) commands. For reports, this means explaining the findings.
+            // FIX: The unescaped backticks in the following line caused a syntax error in the template literal, which was reported as a reference error for `resultType`. They have been properly escaped.
+            -   A "Getting Started" or "Usage" section with instructions. If \`resultType\` is "code", this means installation (\`npm install\`) and execution (\`npm run dev\`) commands. If \`resultType\` is "text", this means explaining the findings or how to read the report.
             -   A "Technical Details" or "Methodology" section if applicable, detailing architecture or dependencies.
-        2.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
-        3.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field.
-        4.  **Set Status:** Finally, set the \`status\` to "completed".
+        3.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
+        4.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field.
+        5.  **Set Status:** Finally, set the \`status\` to "completed".
 
 **Final Output Structure:**
 If the goal is to create a "project repository" or a runnable application, the final set of artifacts should represent a complete file structure. This includes source code files (e.g., \`index.ts\`, \`App.tsx\`), dependency files (\`package.json\`), build configuration (\`tsconfig.json\`, \`vite.config.ts\`), and public assets (\`index.html\`). The final consolidation step should ensure all these files are present and correctly structured.
@@ -151,7 +155,8 @@ const responseSchema = {
             required: ['goal', 'steps', 'artifacts', 'notes', 'progress']
         },
         finalResultMarkdown: { type: Type.STRING },
-        finalResultSummary: { type: Type.STRING }
+        finalResultSummary: { type: Type.STRING },
+        resultType: { type: Type.STRING, description: "The type of result, either 'code' or 'text'. Should be set by the QA agent upon completion." }
     },
     required: ['goal', 'maxIterations', 'currentIteration', 'status', 'runLog', 'state', 'finalResultMarkdown', 'finalResultSummary']
 };

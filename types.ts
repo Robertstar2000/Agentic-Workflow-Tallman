@@ -102,4 +102,6 @@ export interface WorkflowState {
     finalResultMarkdown: string;
     /** A concise, user-facing summary of the final result. */
     finalResultSummary: string;
+    /** The type of the final result, determined by the QA agent upon completion. */
+    resultType?: 'code' | 'text';
 }
