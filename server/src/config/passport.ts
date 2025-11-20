@@ -12,6 +12,16 @@ const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || 'placeholder_se
 const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID || 'placeholder_id';
 const MICROSOFT_CLIENT_SECRET = process.env.MICROSOFT_CLIENT_SECRET || 'placeholder_secret';
 
+
+interface User {
+    id: number | bigint;
+    email: string;
+    password?: string;
+    google_id?: string;
+    github_id?: string;
+    microsoft_id?: string;
+}
+
 passport.serializeUser((user: any, done) => {
     done(null, user.id);
 });
@@ -19,8 +29,8 @@ passport.serializeUser((user: any, done) => {
 passport.deserializeUser((id: any, done) => {
     try {
         const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
-        const user = stmt.get(id);
-        done(null, user);
+        const user = stmt.get(id) as User | undefined;
+        done(null, user || null);
     } catch (err) {
         done(err, null);
     }
@@ -31,7 +41,7 @@ const findOrCreateUser = (profile: any, providerField: string, done: any) => {
     try {
         // 1. Try to find by provider ID
         let stmt = db.prepare(`SELECT * FROM users WHERE ${providerField} = ?`);
-        let user = stmt.get(profile.id);
+        let user = stmt.get(profile.id) as User | undefined;
 
         if (user) {
             return done(null, user);
@@ -41,7 +51,7 @@ const findOrCreateUser = (profile: any, providerField: string, done: any) => {
         const email = profile.emails?.[0]?.value;
         if (email) {
             stmt = db.prepare('SELECT * FROM users WHERE email = ?');
-            user = stmt.get(email);
+            user = stmt.get(email) as User | undefined;
 
             if (user) {
                 // Link account
@@ -59,7 +69,7 @@ const findOrCreateUser = (profile: any, providerField: string, done: any) => {
         const userEmail = email || `${profile.id}@${providerField.split('_')[0]}.oauth`;
 
         const info = insert.run(userEmail, randomPassword, profile.id);
-        const newUser = { id: info.lastInsertRowid, email: userEmail };
+        const newUser: User = { id: info.lastInsertRowid, email: userEmail };
         done(null, newUser);
 
     } catch (err) {
