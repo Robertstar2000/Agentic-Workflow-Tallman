@@ -1,7 +1,10 @@
+/// <reference types="vite/client" />
 
 import type { LLMSettings, WorkflowState } from "../types";
 
-const API_URL = '/api/workflow';
+// Use environment variable for API URL in production, fallback to localhost for development
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = `${API_BASE_URL}/api/workflow`;
 
 const getAuthHeaders = () => {
     const token = localStorage.getItem('auth_token');

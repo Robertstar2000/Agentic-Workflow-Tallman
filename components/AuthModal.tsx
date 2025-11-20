@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 
 import React, { useState } from 'react';
 import { XIcon, UserIcon, GoogleIcon, MicrosoftIcon, GithubIcon } from './icons';
@@ -20,7 +21,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onAuthenticated }
         setLoading(true);
 
         try {
-            const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const endpoint = `${API_BASE_URL}${isLogin ? '/api/auth/login' : '/api/auth/register'}`;
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
