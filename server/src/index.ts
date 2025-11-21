@@ -32,7 +32,7 @@ const distPath = path.join(__dirname, '../../dist');
 app.use(express.static(distPath));
 
 // Handle client-side routing - serve index.html for all non-API routes
-app.get('/(.*)', (req, res) => {
+app.get(/.*/, (req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
 });
 
