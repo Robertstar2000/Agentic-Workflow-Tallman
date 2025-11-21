@@ -22,18 +22,25 @@ const getAuthHeaders = () => {
  * @returns {Promise<WorkflowState>} The workflow state after the iteration.
  */
 export const runWorkflowIteration = async (currentState: WorkflowState, settings: LLMSettings, ragContent?: string): Promise<WorkflowState> => {
-    const response = await fetch(`${API_URL}/run`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ currentState, settings, ragContent })
-    });
+    try {
+        const response = await fetch(`${API_URL}/run`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ currentState, settings, ragContent })
+        });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Workflow execution failed: ${errorText}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Workflow execution failed: ${errorText}`);
+        }
+
+        return await response.json();
+    } catch (error: any) {
+        if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+            throw new Error(`Could not connect to backend at ${API_URL}. Please ensure the server is running and accessible.`);
+        }
+        throw error;
     }
-
-    return await response.json();
 };
 
 /**
@@ -42,17 +49,24 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
  * @returns {Promise<boolean>} A promise that resolves to true if the connection is successful.
  */
 export const testProviderConnection = async (settings: LLMSettings): Promise<boolean> => {
-    const response = await fetch(`${API_URL}/test-connection`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ settings })
-    });
+    try {
+        const response = await fetch(`${API_URL}/test-connection`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ settings })
+        });
 
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Connection test failed: ${errorText}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Connection test failed: ${errorText}`);
+        }
+
+        const data = await response.json();
+        return data.success;
+    } catch (error: any) {
+        if (error.name === 'TypeError' && error.message === 'Failed to fetch') {
+            throw new Error(`Could not connect to backend at ${API_URL}. Please ensure the server is running and accessible.`);
+        }
+        throw error;
     }
-
-    const data = await response.json();
-    return data.success;
 };
