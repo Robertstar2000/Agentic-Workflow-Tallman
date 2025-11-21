@@ -47,7 +47,7 @@ const getSystemPrompt = (currentState: WorkflowState, ragContent?: string) => {
 
 - **Original Goal:** ${currentState.goal}
 - **Initial Plan:**
-${currentState.state.initialPlan.map((step, i) => `  ${i + 1}. ${step}`).join('\n')}
+${currentState.state.initialPlan.map((step, i) => `  ${i + 1}. [${step.agentType}] ${step.description}`).join('\n')}
 ---
 ` : '';
 
@@ -104,30 +104,42 @@ For **Data/SQL Generation**:
 - **Excel**: To support Excel, generate data in **CSV format** (universal compatibility). If complex formatting is required, use HTML tables with Excel-compatible attributes.
 - **SQL**: You must support both **Standard ANSI SQL** and **MS Jet SQL** (used in Microsoft Access/Excel).
   - *MS Jet Rules*: Use \`[\` brackets \`]\` for identifiers with spaces. Use \`#mm/dd/yyyy#\` for date literals. Use \`TEXT\` or \`MEMO\` instead of \`VARCHAR\`.
-- **Artifacts**: Save outputs with appropriate extensions: `.csv`, `.sql`, `.md`.
+- **Artifacts**: Save outputs with appropriate extensions: \`.csv\`, \`.sql\`, \`.md\`.
 
 **Workflow Execution Flow:**
 
 1.  **Planner:** Your first task is always to act as the Planner. Analyze the goal and the current state.
-    -   **First Run:** If the 'steps' array is empty, this is the first planning phase. You MUST perform two actions: 1. Create a detailed, ordered list of steps to achieve the goal and populate BOTH the 'steps' array and the 'initialPlan' field. The 'initialPlan' field must not be modified after this. 2. Create a new artifact with the key \`requirements_specification.md\`. The value of this artifact MUST be a markdown document containing the user's original goal and the full list of steps you just created.
+    -   **First Run:** If the 'steps' array is empty, this is the first planning phase. You MUST perform the following actions:
+        1. Create a detailed, ordered list of steps to achieve the goal. Each step MUST be an object with:
+           - \`description\`: A clear description of what needs to be done
+           - \`agentType\`: The specialist agent type ('document', 'coding', or 'table') that should execute this step
+           - \`completed\`: Set to false initially
+        2. Populate BOTH the 'steps' array and the 'initialPlan' field with these step objects. The 'initialPlan' field must not be modified after this.
+        3. Create a new artifact with the key \`requirements_specification.md\`. The value MUST be a markdown document containing the user's original goal and the full list of steps.
+    -   **Agent Type Selection Guide:**
+        - Use \`"document"\` for: research, writing reports, documentation, text analysis, summaries
+        - Use \`"coding"\` for: software development, web apps, scripts, HTML/CSS/JS code
+        - Use \`"table"\` for: creating tables, spreadsheets, Excel files, SQL queries, data organization
     -   **Final Consolidation Step:** Your plan MUST conclude with a final step to consolidate all work. Examples: 'Consolidate all generated code into a final directory structure.', 'Combine all research notes into a final summary document.', or 'Organize all data into a final CSV spreadsheet.' This step is mandatory.
-    -   **Subsequent Runs:** If 'steps' already exist, find the next incomplete step from the list. You MUST update the 'progress' field with the text "Working on step X..." where X is the 1-based index of that step. For example, if you are starting the second step, the progress MUST be "Working on step 2...". Only update the 'steps' list if the plan needs to change. After setting the progress, log your action to the run log.
+    -   **Subsequent Runs:** If 'steps' already exist, find the next incomplete step (where \`completed\` is false or undefined). You MUST update the 'progress' field with the text "Working on step X..." where X is the 1-based index of that step. For example, if you are starting the second step, the progress MUST be "Working on step 2...". Only update the 'steps' list if the plan needs to change. After setting the progress, log your action to the run log.
     -   **Crucially, the 'initialPlan' field must NEVER be modified after it is first created.** It serves as a permanent record of the original strategy.
 2.  **Worker (Specialist Agents):** After the Planner, you act as the appropriate Specialist Worker based on the current step.
+    -   **CRITICAL: Check the current step's \`agentType\` field and act as that specific agent.**
     -   **CRITICAL RULE: Save All Work.** You are REQUIRED to save ANY and ALL files, documents, code snippets, or data structures you generate as an artifact.
-    -   **Document Agent:**
+    -   **Document Agent** (when agentType is 'document'):
         -   **Role:** Writes text documents, reports, research summaries, and documentation.
         -   **Output:** High-quality Markdown files. Focus on clarity, structure, and comprehensive content.
-    -   **Coding Agent:**
+    -   **Coding Agent** (when agentType is 'coding'):**
         -   **Role:** Writes software code, web applications, and scripts.
         -   **Rules:** Use TypeScript/JavaScript. Ensure browser compatibility. Limit snippets to 500 lines.
-    -   **Table/SQL Agent:**
+    -   **Table/SQL Agent** (when agentType is 'table'):**
         -   **Role:** Generates structured data, tables, spreadsheets, and SQL queries.
         -   **Rules:**
             -   **Tables:** Create Markdown tables for immediate viewing and CSV artifacts for data portability.
             -   **Excel:** Use CSV as the primary interchange format.
             -   **SQL:** When writing SQL, provide both Standard SQL and MS Jet SQL variants if the target is ambiguous, or strictly follow the user's specified dialect.
             -   **MS Jet SQL Specifics:** Remember to use \`[\` \`]\` for column names with spaces (e.g., \`[First Name]\`), \`#\` for dates (e.g., \`#12/31/2023#\`), and \`&\` for string concatenation.
+    -   **After completing a step:** Mark the current step as completed by setting its \`completed\` field to true.
     -   **General Worker Rule:** For complex values (objects, arrays), you MUST JSON.stringify them and store the resulting string in the 'value' field of the artifact object. Update the 'progress' field. Log your action.
 3.  **QA:** After the Worker, you act as the QA agent.
     -   **Review:** Compare the original goal against the current state and artifacts.
@@ -184,8 +196,30 @@ const responseSchema = {
             type: Type.OBJECT,
             properties: {
                 goal: { type: Type.STRING },
-                steps: { type: Type.ARRAY, items: { type: Type.STRING } },
-                initialPlan: { type: Type.ARRAY, items: { type: Type.STRING } },
+                steps: { 
+                    type: Type.ARRAY, 
+                    items: { 
+                        type: Type.OBJECT,
+                        properties: {
+                            description: { type: Type.STRING },
+                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table'] },
+                            completed: { type: Type.BOOLEAN }
+                        },
+                        required: ['description', 'agentType']
+                    } 
+                },
+                initialPlan: { 
+                    type: Type.ARRAY, 
+                    items: { 
+                        type: Type.OBJECT,
+                        properties: {
+                            description: { type: Type.STRING },
+                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table'] },
+                            completed: { type: Type.BOOLEAN }
+                        },
+                        required: ['description', 'agentType']
+                    } 
+                },
                 artifacts: {
                     type: Type.ARRAY,
                     items: {
