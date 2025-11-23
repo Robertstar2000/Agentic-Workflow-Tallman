@@ -17,11 +17,11 @@ import { PlanApprovalModal } from './components/PlanApprovalModal';
 
 const DEFAULT_SETTINGS: LLMSettings = {
     provider: 'ollama',
-    google: { model: 'gemini-2.5-flash' },
+    google: { model: 'gemini-2.5-flash' }, // Kept for type safety but unused
     openai: { apiKey: '', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
     claude: { apiKey: '', model: 'claude-3-opus-20240229', baseURL: 'https://api.anthropic.com/v1' },
     openrouter: { apiKey: '', model: 'openai/gpt-4o', baseURL: 'https://openrouter.ai/api/v1' },
-    ollama: { model: 'llama3', baseURL: 'http://localhost:11434' },
+    ollama: { model: 'llama3.1:8b', baseURL: 'http://10.10.20.24:11434' },
     groq: { apiKey: '', model: 'llama3-70b-8192', baseURL: 'https://api.groq.com/openai/v1' },
     samba: { apiKey: '', model: 'samba-ai/samba-cog-lora', baseURL: 'https://api.sambanova.ai/v1' },
     cerberus: { apiKey: '', model: 'cerberus-v1', baseURL: 'https://api.cerberus.ai/v1' },

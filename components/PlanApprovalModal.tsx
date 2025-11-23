@@ -1,8 +1,9 @@
 import React from 'react';
+import type { Step } from '../types';
 import { XIcon, CheckCircleIcon, ArrowUturnLeftIcon } from './icons';
 
 interface PlanApprovalModalProps {
-    steps: string[];
+    steps: Step[];
     onApprove: () => void;
     onReject: () => void;
 }
@@ -17,20 +18,20 @@ export const PlanApprovalModal: React.FC<PlanApprovalModalProps> = ({ steps, onA
                         <XIcon className="w-6 h-6 text-text-muted" />
                     </button>
                 </div>
-                
+
                 <p className="text-text-secondary mb-4">The AI has generated the following plan. Please review the steps below. You can either approve the plan to begin execution or go back to edit your goal.</p>
 
                 <div className="max-h-64 overflow-y-auto bg-black/30 p-4 rounded-lg border border-border-muted mb-6 space-y-3">
                     {steps.map((step, index) => (
                         <div key={index} className="flex items-start">
                             <span className="text-primary-end font-bold mr-3">{index + 1}.</span>
-                            <p className="text-text-secondary">{step}</p>
+                            <p className="text-text-secondary">{step.description}</p>
                         </div>
                     ))}
                 </div>
 
                 <div className="flex justify-end items-center gap-4">
-                     <button
+                    <button
                         onClick={onReject}
                         className="flex items-center justify-center gap-2 px-6 py-2 font-semibold text-text-secondary bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-full shadow-lg transition-colors duration-300"
                     >

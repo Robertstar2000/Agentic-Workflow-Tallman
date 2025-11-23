@@ -1,9 +1,9 @@
 import React from 'react';
-import type { WorkflowStatus } from '../types';
+import type { WorkflowStatus, Step } from '../types';
 import { CheckCircleIcon, CogIcon, CircleIcon } from './icons';
 
 interface PlanSidebarProps {
-    steps: string[];
+    steps: Step[];
     progress: string;
     status: WorkflowStatus;
 }
@@ -16,7 +16,7 @@ export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, statu
     const match = progress.match(/step (\d+)/i);
     // Subtract 1 for 0-based array index. If no match, set to -1.
     const currentStepIndex = match ? parseInt(match[1], 10) - 1 : -1;
-    
+
     const getStepStatus = (index: number): StepStatus => {
         if (status === 'completed') {
             return 'completed';
@@ -29,7 +29,7 @@ export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, statu
         }
         return 'pending';
     };
-    
+
     const statusConfig: { [key in StepStatus]: { icon: React.ReactElement, textClass: string } } = {
         completed: {
             icon: <CheckCircleIcon className="w-6 h-6 text-success" />,
@@ -59,7 +59,7 @@ export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, statu
                                 {icon}
                             </div>
                             <p className={`text-sm ${textClass}`}>
-                                <span className="font-bold">Step {index + 1}:</span> {step}
+                                <span className="font-bold">Step {index + 1}:</span> {step.description}
                             </p>
                         </li>
                     );

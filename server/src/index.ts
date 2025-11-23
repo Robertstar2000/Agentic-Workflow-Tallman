@@ -10,9 +10,12 @@ import workflowRoutes from './routes/workflow';
 import path from 'path';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3101;
 
-app.use(cors());
+app.use(cors({
+    origin: 'http://localhost:3100',
+    credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 
 app.use(session({

@@ -2,8 +2,10 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import bcrypt from 'bcrypt';
 
-const dbPath = path.resolve(__dirname, '../../database.sqlite');
-const db = new Database(dbPath);
+const dbPath = path.join(process.cwd(), 'database.sqlite');
+console.log('Current working directory:', process.cwd());
+console.log('Database path:', dbPath);
+const db = new Database(dbPath, { verbose: console.log });
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (

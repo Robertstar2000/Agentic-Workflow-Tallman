@@ -3,7 +3,7 @@
 import type { LLMSettings, WorkflowState } from "../types";
 
 // Use environment variable for API URL in production, fallback to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const API_URL = `${API_BASE_URL}/api/workflow`;
 
 const getAuthHeaders = () => {

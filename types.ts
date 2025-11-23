@@ -61,7 +61,7 @@ export interface Artifact {
 /**
  * Defines the type of specialist agent that should execute a step.
  */
-export type AgentType = 'document' | 'coding' | 'table';
+export type AgentType = 'document' | 'coding' | 'table' | 'browser';
 
 /**
  * Represents a single step in the workflow plan.

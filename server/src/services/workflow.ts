@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { chromium } from "playwright";
 import type { LLMSettings, WorkflowState, ProviderSettings } from "../types";
 import { googleRateLimiter } from "../utils/rateLimiter";
 
@@ -121,6 +122,7 @@ For **Data/SQL Generation**:
         - Use \`"document"\` for: research, writing reports, documentation, text analysis, summaries
         - Use \`"coding"\` for: software development, web apps, scripts, HTML/CSS/JS code
         - Use \`"table"\` for: creating tables, spreadsheets, Excel files, SQL queries, data organization
+        - Use \`"browser"\` for: browsing the web, scraping content, taking screenshots, testing web pages
     -   **Final Consolidation Step:** Your plan MUST conclude with a final step to consolidate all work. Examples: 'Consolidate all generated code into a final directory structure.', 'Combine all research notes into a final summary document.', or 'Organize all data into a final CSV spreadsheet.' This step is mandatory.
     -   **Subsequent Runs:** If 'steps' already exist, find the next incomplete step (where \`completed\` is false or undefined). You MUST update the 'progress' field with the text "Working on step X..." where X is the 1-based index of that step. For example, if you are starting the second step, the progress MUST be "Working on step 2...". Only update the 'steps' list if the plan needs to change. After setting the progress, log your action to the run log.
     -   **Crucially, the 'initialPlan' field must NEVER be modified after it is first created.** It serves as a permanent record of the original strategy.
@@ -140,6 +142,18 @@ For **Data/SQL Generation**:
             -   **Excel:** Use CSV as the primary interchange format.
             -   **SQL:** When writing SQL, provide both Standard SQL and MS Jet SQL variants if the target is ambiguous, or strictly follow the user's specified dialect.
             -   **MS Jet SQL Specifics:** Remember to use \`[\` \`]\` for column names with spaces (e.g., \`[First Name]\`), \`#\` for dates (e.g., \`#12/31/2023#\`), and \`&\` for string concatenation.
+    -   **Browser Agent** (when agentType is 'browser'):
+        -   **Role:** Interacts with web pages to gather information or verify functionality.
+        -   **Capabilities:**
+            -   **Navigate:** Go to a specific URL.
+            -   **Scrape:** Extract text content from the page.
+            -   **Screenshot:** Capture a screenshot of the current page.
+        -   **Action Protocol:** To perform an action, you MUST create an artifact with the key \`browser_action\`. The value must be a JSON object with:
+            -   \`action\`: One of "goto", "scrape", "screenshot".
+            -   \`url\`: (For "goto") The URL to navigate to.
+            -   \`selector\`: (Optional for "scrape") A CSS selector to target specific content. Defaults to "body".
+        -   **Example:** \`{ "key": "browser_action", "value": "{ \\"action\\": \\"goto\\", \\"url\\": \\"https://example.com\\" }" }\`
+        -   **After creating the artifact:** Update the 'notes' field to indicate you are waiting for the browser action to complete. The system will execute the action and provide the result in a \`browser_result\` artifact in the next iteration. Do NOT mark the step as completed until you have processed the result.
     -   **After completing a step:** Mark the current step as completed by setting its \`completed\` field to true.
     -   **General Worker Rule:** For complex values (objects, arrays), you MUST JSON.stringify them and store the resulting string in the 'value' field of the artifact object. Update the 'progress' field. Log your action.
 3.  **QA:** After the Worker, you act as the QA agent.
@@ -203,7 +217,7 @@ const responseSchema = {
                         type: Type.OBJECT,
                         properties: {
                             description: { type: Type.STRING },
-                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table'] },
+                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table', 'browser'] },
                             completed: { type: Type.BOOLEAN }
                         },
                         required: ['description', 'agentType']
@@ -215,7 +229,7 @@ const responseSchema = {
                         type: Type.OBJECT,
                         properties: {
                             description: { type: Type.STRING },
-                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table'] },
+                            agentType: { type: Type.STRING, enum: ['document', 'coding', 'table', 'browser'] },
                             completed: { type: Type.BOOLEAN }
                         },
                         required: ['description', 'agentType']
@@ -443,6 +457,52 @@ const _executeRAG = (query: string, content: string): string => {
 };
 
 /**
+ * Executes a browser action defined in an artifact.
+ * @param {string} actionJson - The JSON string defining the action.
+ * @returns {Promise<string>} The result of the action.
+ */
+const _executeBrowserAction = async (actionJson: string): Promise<string> => {
+    let browser;
+    try {
+        const actionData = JSON.parse(actionJson);
+        const { action, url, selector } = actionData;
+
+        browser = await chromium.launch();
+        const page = await browser.newPage();
+
+        if (action === 'goto') {
+            if (!url) throw new Error("URL is required for 'goto' action.");
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            const title = await page.title();
+            return `Successfully navigated to ${url}. Page title: ${title}`;
+        } else if (action === 'scrape') {
+            // If no URL provided, assume we are already on a page (in a real stateful browser, this would work differently. 
+            // For this stateless implementation, we might need to re-navigate or pass the context. 
+            // To keep it simple for now, 'scrape' might need a URL or we assume 'goto' was just called in the same sequence?
+            // Actually, since this is a stateless loop, we can't persist the browser instance easily between iterations without more complex state management.
+            // So for now, let's assume 'scrape' also takes a URL, or we combine goto+scrape.
+            // Let's refine the protocol: 'scrape' takes a URL.
+            if (!url) throw new Error("URL is required for 'scrape' action (stateless mode).");
+            await page.goto(url, { waitUntil: 'domcontentloaded' });
+            const content = await page.locator(selector || 'body').innerText();
+            return `Content from ${url}:\n\n${content.slice(0, 5000)}... (truncated)`;
+        } else if (action === 'screenshot') {
+            if (!url) throw new Error("URL is required for 'screenshot' action (stateless mode).");
+            await page.goto(url, { waitUntil: 'networkidle' });
+            const buffer = await page.screenshot({ fullPage: true });
+            return `Screenshot captured. (Base64 data length: ${buffer.toString('base64').length})`;
+            // In a real app, we'd save this to a file and return the path, or upload it.
+        } else {
+            return `Unknown browser action: ${action}`;
+        }
+    } catch (error: any) {
+        return `Browser action failed: ${error.message}`;
+    } finally {
+        if (browser) await browser.close();
+    }
+};
+
+/**
  * Executes a single iteration of the workflow using the configured LLM provider.
  * It also handles the RAG (Retrieval-Augmented Generation) flow if requested by the agent.
  * @param {WorkflowState} currentState - The state of the workflow before the iteration.
@@ -496,6 +556,17 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
         } else {
             newState.state.notes = `You requested a search, but no knowledge document has been provided by the user. Please proceed with the task using your existing knowledge.`;
         }
+    }
+
+    const browserActionArtifact = newState.state.artifacts.find(a => a.key === 'browser_action');
+    if (browserActionArtifact) {
+        // Remove the request artifact
+        newState.state.artifacts = newState.state.artifacts.filter(a => a.key !== 'browser_action');
+
+        const result = await _executeBrowserAction(browserActionArtifact.value);
+
+        newState.state.artifacts.push({ key: 'browser_result', value: result });
+        newState.state.notes = `Browser action completed. Result available in 'browser_result' artifact.`;
     }
 
     return newState;

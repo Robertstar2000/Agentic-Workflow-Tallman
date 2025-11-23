@@ -21,7 +21,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onAuthenticated }
         setLoading(true);
 
         try {
-            const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const API_BASE_URL = import.meta.env.VITE_API_URL || '';
             const endpoint = `${API_BASE_URL}${isLogin ? '/api/auth/login' : '/api/auth/register'}`;
 
             const response = await fetch(endpoint, {

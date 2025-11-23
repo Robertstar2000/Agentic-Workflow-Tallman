@@ -208,7 +208,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
     };
 
 
-    const providers: LLMSettings['provider'][] = ['google', 'openai', 'claude', 'openrouter', 'ollama', 'groq', 'samba', 'cerberus'];
+    const providers: LLMSettings['provider'][] = ['openai', 'claude', 'openrouter', 'ollama', 'groq', 'samba', 'cerberus'];
 
     const passedCount = testResults.filter(r => r.passed).length;
     const failedCount = testResults.length - passedCount;
@@ -233,10 +233,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
                                     onClick={() => isOllama && handleProviderChange(p)}
                                     disabled={!isOllama}
                                     className={`w-full text-left p-2 rounded-md text-sm transition-colors ${!isOllama
-                                            ? 'opacity-40 cursor-not-allowed bg-slate-800/20'
-                                            : activeProvider === p
-                                                ? 'bg-primary-start/30 text-text-primary font-semibold'
-                                                : 'hover:bg-white/5 text-text-muted'
+                                        ? 'opacity-40 cursor-not-allowed bg-slate-800/20'
+                                        : activeProvider === p
+                                            ? 'bg-primary-start/30 text-text-primary font-semibold'
+                                            : 'hover:bg-white/5 text-text-muted'
                                         }`}
                                     title={!isOllama ? 'Only Ollama is available in this deployment' : ''}
                                 >

@@ -23,7 +23,8 @@
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
-    "passport-microsoft": "^2.1.0"
+    "passport-microsoft": "^2.1.0",
+    "playwright": "^1.56.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

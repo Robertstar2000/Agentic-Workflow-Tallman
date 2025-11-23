@@ -7,10 +7,10 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     server: {
-      port: 3000,
-      host: '0.0.0.0',
+      port: 3100,
+      host: 'localhost',
       proxy: {
-        '/api': 'http://localhost:3001'
+        '/api': 'http://localhost:3101'
       }
     },
     plugins: [react()],

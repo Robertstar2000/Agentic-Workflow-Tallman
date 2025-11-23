@@ -65,7 +65,7 @@ export interface WorkflowStep {
     /** A clear description of what needs to be done in this step. */
     description: string;
     /** The specialist agent type that should execute this step. */
-    agentType: 'document' | 'coding' | 'table';
+    agentType: 'document' | 'coding' | 'table' | 'browser';
     /** Whether this step has been completed. */
     completed?: boolean;
 }
