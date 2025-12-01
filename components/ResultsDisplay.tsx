@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import type { WorkflowState, WorkflowStatus, Artifact } from '../types';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { CheckCircleIcon, ExclamationIcon, SpinnerIcon, XCircleIcon, DownloadIcon, MapIcon, CogIcon, DownloadAllIcon, TerminalIcon, ClipboardListIcon } from './icons';
+import { CheckCircleIcon, ExclamationIcon, SpinnerIcon, XCircleIcon, DownloadIcon, MapIcon, CogIcon, DownloadAllIcon, TerminalIcon, ClipboardListIcon, PlayIcon } from './icons';
 import { parseAndSanitizeMarkdown } from '../utils/markdown';
 
 /**
@@ -222,8 +222,26 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
             case 'tsx':
                 mimeType = 'application/javascript;charset=utf-8';
                 break;
+            case 'csv':
+                mimeType = 'text/csv;charset=utf-8';
+                break;
+            case 'sql':
+                mimeType = 'application/sql;charset=utf-8';
+                break;
+            case 'svg':
+                mimeType = 'image/svg+xml;charset=utf-8';
+                break;
+            case 'xml':
+                mimeType = 'application/xml;charset=utf-8';
+                break;
         }
         downloadFile(artifact.value, artifact.key, mimeType);
+    };
+
+    const handlePreviewArtifact = (artifact: Artifact) => {
+        const blob = new Blob([artifact.value], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
     };
 
     const allArtifacts = [...state.state.artifacts];
@@ -335,7 +353,14 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                                             </div>
                                             <p className="font-medium text-sm text-text-primary truncate" title={artifact.key}>{artifact.key}</p>
                                         </div>
-                                        <DownloadButton onDownload={() => handleDownloadArtifact(artifact)} />
+                                        <div className="flex items-center gap-1">
+                                            {artifact.key.toLowerCase() === 'index.html' && (
+                                                 <button onClick={() => handlePreviewArtifact(artifact)} className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-primary-end" aria-label="Preview">
+                                                    <PlayIcon className="w-5 h-5" />
+                                                </button>
+                                            )}
+                                            <DownloadButton onDownload={() => handleDownloadArtifact(artifact)} />
+                                        </div>
                                     </div>
                                 ))}
                             </div>

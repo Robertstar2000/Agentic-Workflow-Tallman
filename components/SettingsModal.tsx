@@ -42,7 +42,7 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ providerKey
     return (
         <div className="space-y-4 pt-4 border-t border-border-muted animate-fade-in">
             {hasBaseURL && (
-                <div>
+                 <div>
                     <label htmlFor={`${providerKey}-baseURL`} className="block text-sm font-medium text-text-secondary mb-1">Endpoint URL</label>
                     <input
                         type="text"
@@ -55,7 +55,7 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ providerKey
                 </div>
             )}
             {hasApiKey && (
-                <div>
+                 <div>
                     <label htmlFor={`${providerKey}-apiKey`} className="block text-sm font-medium text-text-secondary mb-1">API Key</label>
                     <input
                         type="password"
@@ -67,7 +67,7 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ providerKey
                     />
                 </div>
             )}
-            <div>
+             <div>
                 <label htmlFor={`${providerKey}-model`} className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
                 <input
                     type="text"
@@ -79,7 +79,7 @@ const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ providerKey
                 />
             </div>
             <div className="flex items-center gap-4">
-                <button
+                 <button 
                     onClick={onTest}
                     disabled={testStatus === 'testing'}
                     className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-border-muted rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
@@ -135,7 +135,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
         const saveSettings = async () => {
             // Create a deep copy to avoid mutating state before encryption
             const settingsToSave = JSON.parse(JSON.stringify(settings));
-
+            
             // Encrypt API keys before saving
             if (settingsToSave.openai.apiKey) {
                 settingsToSave.openai.apiKey = await encrypt(settingsToSave.openai.apiKey);
@@ -143,7 +143,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
             if (settingsToSave.claude.apiKey) {
                 settingsToSave.claude.apiKey = await encrypt(settingsToSave.claude.apiKey);
             }
-            if (settingsToSave.openrouter.apiKey) {
+             if (settingsToSave.openrouter.apiKey) {
                 settingsToSave.openrouter.apiKey = await encrypt(settingsToSave.openrouter.apiKey);
             }
             if (settingsToSave.groq.apiKey) {
@@ -158,7 +158,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
 
             localStorage.setItem('ai-workflow-settings', JSON.stringify(settingsToSave));
         };
-
+        
         saveSettings();
         document.addEventListener('keydown', handleEscape);
         document.addEventListener('mousedown', handleClickOutside);
@@ -193,15 +193,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
     const handleRunTests = async () => {
         setTestRunnerStatus('running');
         setTestResults([]);
-
+        
         try {
             const { allTestSuites } = await import('../tests/index');
             const { runTests } = await import('../utils/testRunner');
             const results = await runTests(allTestSuites);
             setTestResults(results);
-        } catch (e) {
-            console.error("Failed to run tests:", e);
-            setTestResults([{ suite: 'Test Runner', name: 'Initialization', passed: false, error: (e as Error).message }]);
+        } catch(e) {
+             console.error("Failed to run tests:", e);
+             setTestResults([{ suite: 'Test Runner', name: 'Initialization', passed: false, error: (e as Error).message }]);
         } finally {
             setTestRunnerStatus('finished');
         }
@@ -222,35 +222,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
                         <XIcon className="w-6 h-6 text-text-muted" />
                     </button>
                 </div>
-
+                
                 <div className="flex flex-col md:flex-row gap-6">
                     <div className="flex flex-row md:flex-col md:border-r border-b md:border-b-0 border-border-muted pr-4 pb-4 md:pb-0 gap-1">
-                        {providers.map(p => {
-                            const isOllama = p === 'ollama';
-                            return (
-                                <button
-                                    key={p}
-                                    onClick={() => isOllama && handleProviderChange(p)}
-                                    disabled={!isOllama}
-                                    className={`w-full text-left p-2 rounded-md text-sm transition-colors ${!isOllama
-                                            ? 'opacity-40 cursor-not-allowed bg-slate-800/20'
-                                            : activeProvider === p
-                                                ? 'bg-primary-start/30 text-text-primary font-semibold'
-                                                : 'hover:bg-white/5 text-text-muted'
-                                        }`}
-                                    title={!isOllama ? 'Only Ollama is available in this deployment' : ''}
-                                >
-                                    <span className="capitalize">{p}</span>
-                                    {!isOllama && <span className="text-xs ml-2">(Disabled)</span>}
-                                </button>
-                            );
-                        })}
+                        {providers.map(p => (
+                            <button
+                                key={p}
+                                onClick={() => handleProviderChange(p)}
+                                className={`w-full text-left p-2 rounded-md text-sm transition-colors ${activeProvider === p ? 'bg-primary-start/30 text-text-primary font-semibold' : 'hover:bg-white/5 text-text-muted'}`}
+                            >
+                                <span className="capitalize">{p}</span>
+                            </button>
+                        ))}
                     </div>
 
                     <div className="flex-1">
                         <h3 className="text-lg font-semibold capitalize mb-2">{activeProvider} Settings</h3>
                         {activeProvider === 'google' && <p className="text-sm text-text-muted">Uses the API key provided by the execution environment. No additional configuration needed.</p>}
-
+                        
                         <ProviderSettingsForm
                             providerKey={activeProvider}
                             settings={settings[activeProvider]}
@@ -300,9 +289,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
                                     </ul>
                                 </div>
                             )}
-                            {failedCount === 0 && (
-                                <p className="text-sm text-success">All tests passed successfully!</p>
-                            )}
+                             {failedCount === 0 && (
+                                 <p className="text-sm text-success">All tests passed successfully!</p>
+                             )}
                         </div>
                     )}
                 </div>

@@ -53,7 +53,7 @@ Here is a complete example file, which you could save as `my-workflow.json`:
 ```json
 {
   "goal": "Generate a Python script that analyzes a CSV file named 'sales_data.csv'. The script should calculate the total sales per product category and output a new CSV file named 'summary.csv'.",
-  "maxIterations": 50
+  "maxIterations": 25
 }
 ```
 

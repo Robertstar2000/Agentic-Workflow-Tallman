@@ -16,8 +16,8 @@ import { PlanApprovalModal } from './components/PlanApprovalModal';
 
 
 const DEFAULT_SETTINGS: LLMSettings = {
-    provider: 'ollama',
-    google: { model: 'gemini-2.5-flash' },
+    provider: 'google',
+    google: { model: 'gemini-2.5-pro' },
     openai: { apiKey: '', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
     claude: { apiKey: '', model: 'claude-3-opus-20240229', baseURL: 'https://api.anthropic.com/v1' },
     openrouter: { apiKey: '', model: 'openai/gpt-4o', baseURL: 'https://openrouter.ai/api/v1' },
@@ -72,9 +72,9 @@ const App: React.FC = () => {
                     if (parsedSettings.cerberus?.apiKey) {
                         parsedSettings.cerberus.apiKey = await decrypt(parsedSettings.cerberus.apiKey);
                     }
-
+                    
                     // Merge with defaults to ensure all keys are present
-                    setSettings(prev => ({ ...prev, ...parsedSettings }));
+                    setSettings(prev => ({...prev, ...parsedSettings}));
                 }
             } catch (e) {
                 console.error("Failed to parse or decrypt settings from localStorage", e);
@@ -89,7 +89,7 @@ const App: React.FC = () => {
         try {
             for (let i = startIteration; i <= currentState.maxIterations; i++) {
                 const newState = await runWorkflowIteration(currentState, settings, ragContent);
-
+                
                 currentState = { ...newState, currentIteration: i };
                 setWorkflowState(currentState);
 
@@ -100,7 +100,7 @@ const App: React.FC = () => {
         } catch (err) {
             console.error(err);
             setError(err instanceof Error ? err.message : 'An unknown error occurred during the workflow.');
-            const finalState = { ...currentState, status: 'error' as const };
+            const finalState = {...currentState, status: 'error' as const};
             setWorkflowState(finalState);
         } finally {
             setIsRunning(false);
@@ -118,7 +118,7 @@ const App: React.FC = () => {
         }
         setIsRunning(true);
         setError(null);
-
+        
         if (overrides?.goal) setGoal(overrides.goal);
         if (overrides?.maxIterations) setMaxIterations(overrides.maxIterations);
 
@@ -139,7 +139,7 @@ const App: React.FC = () => {
             finalResultSummary: '',
         };
         setWorkflowState(initialState);
-
+        
         if (guidanceMode === 'auto') {
             await runWorkflowLoop(initialState);
         } else { // human-guided
@@ -154,9 +154,9 @@ const App: React.FC = () => {
                     setError("The planner failed to generate a valid plan. Please try refining your goal and run again.");
                 }
             } catch (err) {
-                console.error(err);
+                 console.error(err);
                 setError(err instanceof Error ? err.message : 'An unknown error occurred during the planning phase.');
-                const finalState = { ...initialState, status: 'error' as const, currentIteration: 1 };
+                const finalState = {...initialState, status: 'error' as const, currentIteration: 1};
                 setWorkflowState(finalState);
             } finally {
                 setIsRunning(false);
@@ -165,11 +165,11 @@ const App: React.FC = () => {
 
     }, [goal, maxIterations, settings, ragContent, guidanceMode]);
 
-    const handlePlanApproval = () => {
+     const handlePlanApproval = () => {
         if (!workflowState) return;
         setIsAwaitingApproval(false);
         setIsRunning(true);
-        runWorkflowLoop(workflowState, 2);
+        runWorkflowLoop(workflowState, 2); 
     };
 
     const handlePlanRejection = () => {
@@ -192,7 +192,7 @@ const App: React.FC = () => {
                 if (typeof goalFromFile !== 'string' || !goalFromFile.trim()) {
                     throw new Error("Input JSON must contain a non-empty 'goal' string.");
                 }
-
+                
                 await handleRunWorkflow({
                     goal: goalFromFile,
                     maxIterations: (maxIterationsFromFile && typeof maxIterationsFromFile === 'number') ? maxIterationsFromFile : undefined
@@ -207,7 +207,7 @@ const App: React.FC = () => {
         };
         reader.readAsText(file);
     };
-
+    
     const handleUploadKnowledge = (file: File) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -235,21 +235,13 @@ const App: React.FC = () => {
                     />
                 )}
                 <div className="flex-1 flex flex-col min-w-0">
-                    <Header
-                        isAuthenticated={isAuthenticated}
+                    <Header 
+                        isAuthenticated={isAuthenticated} 
                         onLoginClick={() => setIsAuthModalOpen(true)}
                         onLogoutClick={() => setIsAuthenticated(false)}
                         onSettingsClick={() => setIsSettingsOpen(true)}
                         onHelpClick={() => setIsHelpModalOpen(true)}
                     />
-
-                    {settings.provider === 'ollama' && (
-                        <div className="mt-4 p-4 bg-yellow-900/30 border border-yellow-600/50 rounded-lg">
-                            <p className="text-yellow-400 text-sm font-medium text-center">
-                                ⚠️ Now operating in local private mode only. Users on the same domain as the Ollama LLM will have access and no data will be shared outside of this domain.
-                            </p>
-                        </div>
-                    )}
                     <main className="mt-8 flex-grow">
                         <div className="bg-card-bg border border-border-muted rounded-xl shadow-2xl p-6 backdrop-blur-lg">
                             <WorkflowInput
@@ -271,17 +263,17 @@ const App: React.FC = () => {
                         </div>
 
                         {error && (
-                            <div className="mt-6 bg-red-900/50 border border-error text-error p-4 rounded-lg text-center">
+                             <div className="mt-6 bg-red-900/50 border border-error text-error p-4 rounded-lg text-center">
                                 <p className="font-semibold">Error</p>
                                 <p className="text-sm">{error}</p>
                             </div>
                         )}
-
+                        
                         <div className="mt-8">
                             {workflowState ? (
                                 <ResultsDisplay state={workflowState} />
                             ) : (
-                                <div className="text-center text-text-muted py-12">
+                                 <div className="text-center text-text-muted py-12">
                                     <p>Run the workflow to see a detailed summary...</p>
                                 </div>
                             )}
@@ -291,7 +283,7 @@ const App: React.FC = () => {
                 </div>
             </div>
             {isSettingsOpen && (
-                <SettingsModal
+                <SettingsModal 
                     settings={settings}
                     setSettings={setSettings}
                     onClose={() => setIsSettingsOpen(false)}

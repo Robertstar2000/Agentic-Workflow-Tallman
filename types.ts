@@ -59,32 +59,15 @@ export interface Artifact {
 }
 
 /**
- * Defines the type of specialist agent that should execute a step.
- */
-export type AgentType = 'document' | 'coding' | 'table';
-
-/**
- * Represents a single step in the workflow plan.
- */
-export interface Step {
-    /** Description of what needs to be done in this step. */
-    description: string;
-    /** The type of specialist agent that should execute this step. */
-    agentType: AgentType;
-    /** Whether this step has been completed. */
-    completed?: boolean;
-}
-
-/**
  * Represents the internal, mutable state of the workflow that agents modify.
  */
 export interface InternalState {
     /** The user-defined goal of the workflow. */
     goal: string;
     /** The list of steps to be executed. The Planner can modify this list. */
-    steps: Step[];
+    steps: string[];
     /** A record of the initial plan created by the Planner. This should not be modified after creation. */
-    initialPlan?: Step[];
+    initialPlan?: string[];
     /** A collection of artifacts produced during the workflow. */
     artifacts: Artifact[];
     /** Notes and feedback from the QA agent for the Planner. */
