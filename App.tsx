@@ -88,22 +88,21 @@ const App: React.FC = () => {
         let currentState = initialState;
         let completionAttempts = 0;
         let qaIterations = 0;
-        let step1Iterations = 0;
-        let step2Iterations = 0;
+        const stepIterations: { [key: number]: number } = {};
         try {
             for (let i = startIteration; i <= currentState.maxIterations; i++) {
                 const currentStep = currentState.state.progress?.match(/step (\d+)/i)?.[1];
                 const stepNum = currentStep ? parseInt(currentStep, 10) : 0;
                 
-                if (stepNum === 1) {
-                    step1Iterations++;
-                    if (step1Iterations > 4) {
-                        currentState.state.progress = 'Working on step 2...';
-                    }
-                } else if (stepNum === 2) {
-                    step2Iterations++;
-                    if (step2Iterations > 4) {
-                        currentState.state.progress = 'Working on step 3...';
+                if (stepNum > 0) {
+                    stepIterations[stepNum] = (stepIterations[stepNum] || 0) + 1;
+                    
+                    if ((stepNum === 1 || stepNum === 2) && stepIterations[stepNum] > 4) {
+                        const nextStep = stepNum + 1;
+                        if (nextStep <= currentState.state.steps.length) {
+                            currentState.state.progress = `Working on step ${nextStep}...`;
+                            currentState.state.notes = `Step ${stepNum} exceeded 4 iterations. Moving to step ${nextStep}.`;
+                        }
                     }
                 }
                 
