@@ -22,9 +22,9 @@ export const PlanApprovalModal: React.FC<PlanApprovalModalProps> = ({ steps, onA
 
                 <div className="max-h-64 overflow-y-auto bg-black/30 p-4 rounded-lg border border-border-muted mb-6 space-y-3">
                     {steps.map((step, index) => (
-                        <div key={index} className="flex items-start">
+                        <div key={`approval-step-${index}`} className="flex items-start">
                             <span className="text-primary-end font-bold mr-3">{index + 1}.</span>
-                            <p className="text-text-secondary">{step}</p>
+                            <p className="text-text-secondary">{typeof step === 'string' ? step : JSON.stringify(step)}</p>
                         </div>
                     ))}
                 </div>

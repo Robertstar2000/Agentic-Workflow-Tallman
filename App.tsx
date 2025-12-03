@@ -16,12 +16,12 @@ import { PlanApprovalModal } from './components/PlanApprovalModal';
 
 
 const DEFAULT_SETTINGS: LLMSettings = {
-    provider: 'google',
+    provider: 'ollama',
     google: { model: 'gemini-2.5-pro' },
     openai: { apiKey: '', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
     claude: { apiKey: '', model: 'claude-3-opus-20240229', baseURL: 'https://api.anthropic.com/v1' },
     openrouter: { apiKey: '', model: 'openai/gpt-4o', baseURL: 'https://openrouter.ai/api/v1' },
-    ollama: { model: 'llama3', baseURL: 'http://localhost:11434' },
+    ollama: { model: 'llama3.2', baseURL: 'http://localhost:11434' },
     groq: { apiKey: '', model: 'llama3-70b-8192', baseURL: 'https://api.groq.com/openai/v1' },
     samba: { apiKey: '', model: 'samba-ai/samba-cog-lora', baseURL: 'https://api.sambanova.ai/v1' },
     cerberus: { apiKey: '', model: 'cerberus-v1', baseURL: 'https://api.cerberus.ai/v1' },
@@ -86,14 +86,48 @@ const App: React.FC = () => {
 
     const runWorkflowLoop = async (initialState: WorkflowState, startIteration: number = 1) => {
         let currentState = initialState;
+        let completionAttempts = 0;
+        let qaIterations = 0;
+        let step1Iterations = 0;
+        let step2Iterations = 0;
         try {
             for (let i = startIteration; i <= currentState.maxIterations; i++) {
+                const currentStep = currentState.state.progress?.match(/step (\d+)/i)?.[1];
+                const stepNum = currentStep ? parseInt(currentStep, 10) : 0;
+                
+                if (stepNum === 1) {
+                    step1Iterations++;
+                    if (step1Iterations > 4) {
+                        currentState.state.progress = 'Working on step 2...';
+                    }
+                } else if (stepNum === 2) {
+                    step2Iterations++;
+                    if (step2Iterations > 4) {
+                        currentState.state.progress = 'Working on step 3...';
+                    }
+                }
+                
                 const newState = await runWorkflowIteration(currentState, settings, ragContent);
                 
                 currentState = { ...newState, currentIteration: i };
                 setWorkflowState(currentState);
 
-                if (currentState.status === 'completed' || currentState.status === 'needs_clarification') {
+                const lastAgent = currentState.runLog[currentState.runLog.length - 1]?.agent;
+                if (lastAgent === 'QA') {
+                    qaIterations++;
+                    if (qaIterations >= 3 && currentState.status === 'running') {
+                        currentState.status = 'completed';
+                        setWorkflowState(currentState);
+                        break;
+                    }
+                }
+
+                if (currentState.status === 'completed') {
+                    completionAttempts++;
+                    if (completionAttempts >= 2) {
+                        break;
+                    }
+                } else if (currentState.status === 'needs_clarification') {
                     break;
                 }
             }
@@ -133,7 +167,7 @@ const App: React.FC = () => {
                 steps: [],
                 artifacts: [],
                 notes: 'Initial state. Planner needs to create steps.',
-                progress: 'Not started',
+                progress: 'Processing',
             },
             finalResultMarkdown: '',
             finalResultSummary: '',
@@ -227,10 +261,10 @@ const App: React.FC = () => {
     return (
         <div className="min-h-screen p-4 sm:p-6 md:p-8 flex flex-col">
             <div className="w-full max-w-7xl mx-auto flex-grow flex gap-8">
-                {workflowState && workflowState.state.steps && workflowState.state.steps.length > 0 && (
+                {workflowState && workflowState.state.steps.length > 0 && workflowState.state.artifacts.some(a => a.key === 'Plan.md') && (
                     <PlanSidebar
                         steps={workflowState.state.steps}
-                        progress={workflowState.state.progress}
+                        progress={workflowState.state.progress || ''}
                         status={workflowState.status}
                     />
                 )}

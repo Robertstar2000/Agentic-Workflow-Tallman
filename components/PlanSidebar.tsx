@@ -11,11 +11,8 @@ interface PlanSidebarProps {
 type StepStatus = 'completed' | 'in-progress' | 'pending';
 
 export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, status }) => {
-    // Determine the index of the currently active step.
-    // The LLM is instructed to update the 'progress' field with text like "Working on step X..."
-    const match = progress.match(/step (\d+)/i);
-    // Subtract 1 for 0-based array index. If no match, set to -1.
-    const currentStepIndex = match ? parseInt(match[1], 10) - 1 : -1;
+    const match = progress ? progress.match(/step (\d+)/i) : null;
+    const currentStepIndex = match ? parseInt(match[1], 10) - 1 : 0;
     
     const getStepStatus = (index: number): StepStatus => {
         if (status === 'completed') {
@@ -54,12 +51,12 @@ export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, statu
                     const { icon, textClass } = statusConfig[stepStatus];
 
                     return (
-                        <li key={index} className="flex items-start gap-3">
+                        <li key={`step-${index}`} className="flex items-start gap-3">
                             <div className="flex-shrink-0 mt-0.5" aria-hidden="true">
                                 {icon}
                             </div>
                             <p className={`text-sm ${textClass}`}>
-                                <span className="font-bold">Step {index + 1}:</span> {step}
+                                <span className="font-bold">Step {index + 1}:</span> {typeof step === 'string' ? step : JSON.stringify(step)}
                             </p>
                         </li>
                     );

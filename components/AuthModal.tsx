@@ -1,5 +1,5 @@
 import React from 'react';
-import { XIcon, GoogleIcon, MicrosoftIcon, GithubIcon, UserIcon } from './icons';
+import { XIcon, UserIcon } from './icons';
 
 /**
  * Props for the AuthModal component.
@@ -33,27 +33,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, onAuthenticated }
                     <button onClick={onClose} className="p-1 rounded-full hover:bg-white/10">
                         <XIcon className="w-6 h-6 text-text-muted" />
                     </button>
-                </div>
-
-                <div className="space-y-3">
-                     <button onClick={handleAuth} className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-lg transition-colors">
-                        <GoogleIcon className="w-5 h-5" />
-                        <span className="font-semibold">Sign in with Google</span>
-                    </button>
-                    <button onClick={handleAuth} className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-lg transition-colors">
-                        <MicrosoftIcon className="w-5 h-5" />
-                        <span className="font-semibold">Sign in with Microsoft</span>
-                    </button>
-                    <button onClick={handleAuth} className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-lg transition-colors">
-                        <GithubIcon className="w-5 h-5" />
-                        <span className="font-semibold">Sign in with GitHub</span>
-                    </button>
-                </div>
-
-                <div className="my-6 flex items-center">
-                    <div className="flex-grow border-t border-border-muted"></div>
-                    <span className="flex-shrink mx-4 text-text-muted text-sm">OR</span>
-                    <div className="flex-grow border-t border-border-muted"></div>
                 </div>
 
                 <form onSubmit={(e) => { e.preventDefault(); handleAuth(); }} className="space-y-4">

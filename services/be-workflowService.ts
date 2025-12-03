@@ -2,8 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { LLMSettings, WorkflowState, ProviderSettings } from "../types";
 
-const GOOGLE_API_KEY = process.env.API_KEY;
-
 /**
  * Creates a summarized and truncated version of the workflow state to be used in the LLM prompt,
  * preventing the context from growing too large.
@@ -13,11 +11,9 @@ const GOOGLE_API_KEY = process.env.API_KEY;
 const prepareStateForPrompt = (state: WorkflowState): object => {
     const stateForPrompt = JSON.parse(JSON.stringify(state)); // Deep copy
 
-    const MAX_LOG_ENTRIES = 10;
-
-    // Truncate runLog, keeping the most recent entries
-    if (stateForPrompt.runLog.length > MAX_LOG_ENTRIES) {
-        stateForPrompt.runLog = stateForPrompt.runLog.slice(-MAX_LOG_ENTRIES);
+    // Truncate runLog to maxIterations, keeping the most recent entries
+    if (stateForPrompt.runLog.length > state.maxIterations) {
+        stateForPrompt.runLog = stateForPrompt.runLog.slice(-state.maxIterations);
     }
 
     // These are output fields and not needed for the model's next turn.
@@ -50,11 +46,11 @@ ${currentState.state.initialPlan.map((step, i) => `  ${i + 1}. ${step}`).join('\
 ---
 ` : '';
 
-    const ragInstruction = ragContent ? `
-**Knowledge Document Available:** A document has been uploaded by the user. You can search it for specific information.
-To search the document, act as the Worker and create an artifact with the key \`rag_query\` and the value as your search query (e.g., { "key": "rag_query", "value": "what is the security protocol" }).
-After creating the artifact, end your turn by updating the 'notes' field to indicate you are waiting for search results. The system will perform the search, and the results will be available in an artifact named \`rag_results\` in the next iteration. Do not try to create the \`rag_results\` artifact yourself.
-` : '';
+    const ragInstruction = `
+**Accessing Previous Artifacts:** To read content from previous artifacts (e.g., requirements, earlier code), create an artifact with key \`rag_query\` and value as your search query (e.g., {"key": "rag_query", "value": "requirements specification"}). The system will search all artifacts and provide results in \`rag_results\` in the next iteration.
+**Internet Search:** To search the internet for additional information, create an artifact with key \`internet_query\` and value as your search query (e.g., {"key": "internet_query", "value": "latest React best practices"}). The system will search the web and provide results in \`internet_results\` in the next iteration.
+${ragContent ? '**User Knowledge Document:** A document has been uploaded. You can also search it using the same rag_query mechanism.' : ''}
+`;
 
     const stateForPrompt = prepareStateForPrompt(currentState);
 
@@ -72,20 +68,52 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
 **Workflow Execution Flow:**
 
 1.  **Planner:** Your first task is always to act as the Planner. Analyze the goal and the current state.
-    -   **First Run:** If the 'steps' array is empty, this is the first planning phase. You MUST perform two actions: 1. Create a detailed, ordered list of steps to achieve the goal and populate BOTH the 'steps' array and the 'initialPlan' field. The 'initialPlan' field must not be modified after this. 2. Create a new artifact with the key \`requirements_specification.md\`. The value of this artifact MUST be a markdown document containing the user's original goal and the full list of steps you just created.
-    -   **Final Consolidation Step:** Your plan MUST conclude with a final step to consolidate all work. Examples: 'Consolidate all generated code into a final directory structure.', 'Combine all research notes into a final summary document.', or 'Organize all data into a final CSV spreadsheet.' This step is mandatory.
-    -   **Subsequent Runs:** If 'steps' already exist, find the next incomplete step from the list. You MUST update the 'progress' field with the text "Working on step X..." where X is the 1-based index of that step. For example, if you are starting the second step, the progress MUST be "Working on step 2...". Only update the 'steps' list if the plan needs to change. After setting the progress, log your action to the run log.
+        **Step 1 - CRITICAL:** Using the user's goal clarify, fill in unknowns with educated assumptions and then expand into a bullet list of requirements.
+    -   **Step 2 - CRITICAL:** If the 'steps' array is empty, this is the INITIAL PLANNING PHASE. You MUST create ALL steps RIGHT NOW in this single iteration. DO NOT create just one step. DO NOT plan to add more steps later. Create the ENTIRE plan NOW. After creating the plan, you are DONE with planning - move to the next agent (Worker).
+        
+        **MANDATORY PLAN STRUCTURE (You MUST create ALL these steps NOW):**
+        - Step 1: "Clarify requirements, make assumptions, and write clear bulleted requirements specification"
+        - Step 2: "Refine goal and generate all steps needed to achieve the goal"
+        - Step 3: "[Implement requirement: crisp description of first bullet sub requirement from step 1]"
+        - Step 4: "[Implement requirement: crisp description of second bullet sub requirement from step 1]" then continue with steps until all bullet requirements have their own step ... and so on ...
+        - Step N-1: "[Implement last requirement: crisp description of last bullet sub requirement from step 1]"
+        - Step N: "Summarize final answer to the goal and generate final result artifact (result.html/result.csv/result.md)"
+        
+        **CRITICAL REQUIREMENTS:**
+        1. Create a MINIMUM of 5 steps and MAXIMUM of 15 steps
+        2. Populate BOTH 'steps' and 'initialPlan' arrays with the EXACT SAME complete list of ALL steps
+        3. Steps 3 through N-1 MUST include a CRISP description of the specific requirement being addressed (e.g., "Implement requirement: Create user authentication system", "Implement requirement: Build data visualization dashboard")
+        4. The FINAL step (Step N) MUST summarize the answer and generate the final result artifact
+        5. Set progress to "Planning complete. Ready to execute step 1."
+        6. Log "Planner: Created comprehensive plan with X steps"
+        7. After creating the plan, STOP planning and let the Worker agent take over
+        
+        **WRONG (DO NOT DO THIS):** Creating only Step 1 and planning to add more later
+        **CORRECT (DO THIS):** Creating all 5-15 steps in the 'steps' array right now, then stopping
+        
+    -   **IMPORTANT:** The 'initialPlan' field must NEVER be modified after creation.
+    -   **Subsequent Runs:** Find the next incomplete step. Update 'progress' to "Working on step X..." where X is the 1-based index. Log your action.
     -   **Crucially, the 'initialPlan' field must NEVER be modified after it is first created.** It serves as a permanent record of the original strategy.
-2.  **Worker:** After the Planner, you act as the Worker. Execute the current step defined by the Planner.
-    -   **CRITICAL RULE: Save All Work.** You are REQUIRED to save ANY and ALL files, documents, code snippets, or data structures you generate as an artifact. There are no exceptions. If a step involves creating something, your action MUST result in a new entry in the 'artifacts' array. Use a descriptive key for the artifact (e.g., 'final_report.md', 'component.tsx', 'style_guide.css').
-    -   **Code Generation:** When a step requires generating code, you MUST write it in TypeScript (\`.ts\`/\`.tsx\`) or JavaScript (\`.js\`). All code artifacts must have the appropriate file extension.
-    -   **Web Design:** When generating an \`index.html\` file, you MUST always include CSS styling (colors, fonts, layout) to make the page visually appealing. Use a modern aesthetic (e.g., clean fonts, generous padding, soft shadows). To ensure the page is easily runnable, PREFER including CSS and JavaScript INLINE within the HTML file rather than as separate files, unless the project is very complex.
-    -   **Data Exports:** If the user requests a table, Excel file, or SQL query, you MUST generate a specific artifact for it (e.g., \`export.csv\`, \`query.sql\`). This allows the user to download the data directly. For Excel requests, prefer generating a CSV file.
-    -   For complex values (objects, arrays), you MUST JSON.stringify them and store the resulting string in the 'value' field of the artifact object. Update the 'progress' field. Log your action.
-3.  **QA:** After the Worker, you act as the QA agent.
-    -   **Review:** Compare the original goal against the current state and artifacts.
-    -   **If Not Complete:** If the goal is not met, provide specific, concrete feedback and instructions in the 'notes' field for the Planner's next iteration. Set status back to "running". If you are stuck or the goal is ambiguous, set status to "needs_clarification" and write clarifying questions in the notes.
-    -   **If Complete:** If the goal is fully achieved, you MUST perform the following final steps in order:
+2.  **Worker:** After the Planner, you act as the Worker. Execute the current step using the original goal, clarified goal (if available), and current plan step as context.
+    -   **MANDATORY: Every Step Creates an Artifact.** EVERY step execution MUST produce at least one artifact. Name artifacts clearly: \`step_X_[description].[ext]\`.
+    -   **Step 1 - Requirements:** Create artifact named \`Requirements.md\` with: bulleted list of requirements, assumptions, clarifications, success criteria. This will be shown under the Requirements heading.
+    -   **Step 2 - Plan:** Create artifact named \`Plan.md\` containing a numbered list of ALL steps with detailed descriptions for each step. Format:
+        1. Step Name - Description of what will be accomplished
+        2. Step Name - Description of what will be accomplished
+        This will display in the sidebar and be downloadable.
+    -   **Steps 3-X - Implementation:** Each step creates artifacts for accomplishing a requirement (e.g., \`step_3_database_schema.sql\`, \`step_4_api_endpoints.js\`, \`step_5_ui_component.tsx\`).
+    -   **Final Step - Result:** Create the final deliverable as \`result.html\` (for web apps), \`result.csv\` (for data), or \`result.md\` (for reports). This will be displayed in the UI as the main result.
+    -   **Final Step Completion:** On the FINAL step, if this is the fourth iteration of the final step, you MUST complete the work and create the final result artifact regardless of perfection. Do not continue iterating.
+    -   **Reading Previous Work:** To access previous artifacts, create a \`rag_query\` artifact with your search query (e.g., {"key": "rag_query", "value": "requirements"}). The system will provide results in \`rag_results\` artifact in the next iteration.
+    -   **Internet Access:** You do have internet access. You MUST attempt to search the web, fetch URLs, or reference external resources when you need additional information. The system will provide results in \`internet_results\` artifact in the next iteration.
+    -   **Code Generation:** Write in TypeScript/JavaScript with proper extensions.
+    -   **Web Design:** Include inline CSS in HTML files.
+    -   Update 'progress' field and log "Worker: Completed step X, created [artifact_name]".
+3.  **QA:** After the Worker, you act as the QA agent. Review work against the original goal and clarified goal.
+    -   **MANDATORY: Final Step Iteration Limit:** If this is the FINAL step and after 4 attempted iterations, you MUST approve the work and mark as complete. Do not request further changes.
+    -   **Step Failure Handling:** If a step fails to produce satisfactory results after 3 attempts, you MAY add new steps ONLY to try an alternate approach. Insert new steps after the failed step.
+    -   **If Not Complete:** Provide specific feedback in 'notes'. Set status to "running". Do NOT add steps unless a step has failed 3 times.
+    -   **If Complete:** If goal is fully achieved, perform final steps:
         1.  **Categorize Result:** First, determine if the primary output is 'code' (e.g., a software project, scripts) or 'text' (e.g., a report, analysis, story). Set the \`resultType\` field in the root of the state object to either "code" or "text". This field is mandatory for a completed status.
         2.  **Generate README:** Create a comprehensive \`README.md\` file as a new artifact. This file is the primary deliverable. Its content should be professionally formatted and inspired by high-quality open-source projects (like \`cline/cline\` on GitHub). It MUST include:
             -   A clear title and a concise one-sentence summary of the project.
@@ -95,7 +123,7 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
         3.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
         4.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field.
             -   **Crucial for Text Tasks:** If the user's goal was a question or analysis (e.g., "What is the capital of X?", "Summarize this report"), the summary MUST contain the *actual answer* or *key findings*, not just a statement that the task was completed (e.g., do NOT say "I found the answer", say "The answer is X").
-        5.  **Set Status:** Finally, set the \`status\` to "completed".
+        5.  **MANDATORY: Set Status:** Finally, set the \`status\` to "completed".
 
 **Final Output Structure:**
 If the goal is to create a "project repository" or a runnable application, the final set of artifacts should represent a complete file structure. This includes source code files (e.g., \`index.ts\`, \`App.tsx\`), dependency files (\`package.json\`), build configuration (\`tsconfig.json\`, \`vite.config.ts\`), and public assets (\`index.html\`). The final consolidation step should ensure all these files are present and correctly structured.
@@ -165,10 +193,7 @@ const responseSchema = {
 
 
 const _runGoogleWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
-     if (!GOOGLE_API_KEY) {
-        throw new Error("Google API key is not set in environment variables.");
-    }
-    const ai = new GoogleGenAI({ apiKey: GOOGLE_API_KEY });
+    throw new Error("Google provider is not supported. Please use Ollama.");
 
     const prompt = getSystemPrompt(currentState, ragContent);
 
@@ -201,22 +226,29 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
         format: 'json',
         stream: false,
     };
-    const response = await fetchFn(url, {
-        method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' },
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+    
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            const response = await fetchFn(url, {
+                method: 'POST',
+                body: JSON.stringify(body),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+            }
+            const responseData = await response.json();
+            return JSON.parse(responseData.response) as WorkflowState;
+        } catch (e) {
+            lastError = e instanceof Error ? e : new Error(String(e));
+            if (attempt < 2) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            }
+        }
     }
-    const responseData = await response.json();
-    try {
-        return JSON.parse(responseData.response) as WorkflowState;
-    } catch (e) {
-        console.error("Failed to parse JSON from Ollama response:", responseData.response);
-        throw new Error("Ollama returned invalid JSON.");
-    }
+    throw lastError || new Error("Ollama request failed after 3 attempts");
 };
 
 const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
@@ -399,16 +431,41 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
     }
 
     const ragQueryArtifact = newState.state.artifacts.find(a => a.key === 'rag_query');
+    const internetQueryArtifact = newState.state.artifacts.find(a => a.key === 'internet_query');
 
     if (ragQueryArtifact) {
         newState.state.artifacts = newState.state.artifacts.filter(a => a.key !== 'rag_query');
-        if (ragContent) {
-            const query = ragQueryArtifact.value;
-            const ragResults = _executeRAG(query, ragContent);
+        const query = ragQueryArtifact.value;
+        
+        const allArtifactsContent = newState.state.artifacts
+            .map(a => `[${a.key}]\n${a.value}\n\n`)
+            .join('---\n\n');
+        
+        const combinedContent = ragContent ? `${allArtifactsContent}\n\n[USER DOCUMENT]\n${ragContent}` : allArtifactsContent;
+        
+        if (combinedContent.trim()) {
+            const ragResults = _executeRAG(query, combinedContent);
             newState.state.artifacts.push({ key: 'rag_results', value: ragResults });
-            newState.state.notes = `I have completed the requested search for "${query}". The results are now available in the 'rag_results' artifact. Please review them and continue with your task.`;
+            newState.state.notes = `Search completed for "${query}". Results available in 'rag_results' artifact.`;
         } else {
-            newState.state.notes = `You requested a search, but no knowledge document has been provided by the user. Please proceed with the task using your existing knowledge.`;
+            newState.state.notes = `No artifacts or documents available to search.`;
+        }
+    }
+
+    if (internetQueryArtifact) {
+        newState.state.artifacts = newState.state.artifacts.filter(a => a.key !== 'internet_query');
+        const query = internetQueryArtifact.value;
+        
+        try {
+            const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`;
+            const response = await fetchFn(searchUrl);
+            const data = await response.json();
+            const results = data.RelatedTopics?.slice(0, 5).map((t: any) => t.Text || t.FirstURL).join('\n\n') || 'No results found.';
+            newState.state.artifacts.push({ key: 'internet_results', value: results });
+            newState.state.notes = `Internet search completed for "${query}". Results available in 'internet_results' artifact.`;
+        } catch (e) {
+            newState.state.artifacts.push({ key: 'internet_results', value: 'Internet search failed. Please try a different query.' });
+            newState.state.notes = `Internet search failed for "${query}".`;
         }
     }
 
@@ -430,9 +487,7 @@ export const testProviderConnection = async (settings: LLMSettings, fetchOverrid
     try {
         switch (provider) {
             case 'google':
-                 if (!GOOGLE_API_KEY) throw new Error("Google API Key not available.");
-                 // A simple check as we can't list models easily. Assume key is valid if present.
-                return true;
+                throw new Error("Google provider is not supported. Please use Ollama.");
             case 'ollama':
                 const ollamaUrl = `${providerSettings.baseURL}/api/tags`;
                 const ollamaResp = await fetchFn(ollamaUrl);

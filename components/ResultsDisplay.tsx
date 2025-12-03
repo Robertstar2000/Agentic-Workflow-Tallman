@@ -139,28 +139,43 @@ const AgentIcon: React.FC<{ agent: 'Planner' | 'Worker' | 'QA' }> = ({ agent }) 
 
 
 const AgentStatusPanel: React.FC<{ state: WorkflowState }> = ({ state }) => {
-    const currentAgent = state.runLog.length > 0 ? state.runLog[state.runLog.length - 1].agent : 'Planner';
+    const lastLog = state.runLog.length > 0 ? state.runLog[state.runLog.length - 1] : null;
+    const currentAgent = lastLog?.agent || 'Planner';
+    const summary = lastLog?.summary || state.state.progress || 'Initializing...';
+    const displayText = String(summary).substring(0, 80);
 
     return (
-        <div className="bg-card-bg border border-border-muted rounded-xl p-4 flex flex-wrap gap-4 justify-between items-center backdrop-blur-lg">
-            <div className="flex items-center gap-3">
+        <div className="bg-card-bg border border-border-muted rounded-xl p-3 backdrop-blur-lg">
+            <div className="flex items-center gap-3 overflow-hidden">
                 <AgentIcon agent={currentAgent} />
-                <div>
-                    <p className="text-sm text-text-muted">Current Agent</p>
-                    <p className="font-semibold text-text-primary">{currentAgent}</p>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-text-primary text-sm">{currentAgent}</span>
+                        <StatusIndicator status={state.status} />
+                        <span className="text-xs text-text-muted">Iter {state.currentIteration}/{state.maxIterations}</span>
+                    </div>
+                    <div className="overflow-hidden">
+                        <p className="text-xs text-text-secondary truncate">{displayText}</p>
+                    </div>
                 </div>
             </div>
-            <div>
-                <p className="text-sm text-text-muted">Status</p>
-                <StatusIndicator status={state.status} />
-            </div>
-            <div>
-                <p className="text-sm text-text-muted">Iteration</p>
-                <p className="font-semibold text-text-primary">{state.currentIteration} / {state.maxIterations}</p>
-            </div>
-             <div className="w-full bg-slate-800 rounded-full h-2.5 mt-2 min-w-[100px] hidden sm:block">
-                <div className="bg-gradient-to-r from-primary-start to-primary-end h-2.5 rounded-full" style={{ width: `${(state.currentIteration / state.maxIterations) * 100}%` }}></div>
-            </div>
+        </div>
+    );
+};
+
+const AllStepsPanel: React.FC<{ steps: string[] }> = ({ steps }) => {
+    if (steps.length === 0) return null;
+    return (
+        <div className="bg-card-bg border border-border-muted rounded-xl p-4 backdrop-blur-lg">
+            <h3 className="text-sm font-semibold text-text-secondary mb-3">Generated Plan</h3>
+            <ol className="space-y-2">
+                {steps.map((step, i) => (
+                    <li key={`all-step-${i}`} className="text-sm text-text-secondary flex gap-2">
+                        <span className="font-bold text-primary-end">{i + 1}.</span>
+                        <span>{typeof step === 'string' ? step : JSON.stringify(step)}</span>
+                    </li>
+                ))}
+            </ol>
         </div>
     );
 };
@@ -187,7 +202,7 @@ const DownloadButton: React.FC<{ onDownload: () => void; }> = ({ onDownload }) =
  * @param {WorkflowState} props.state - The current state of the workflow to display.
  */
 export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) => {
-    type Tab = 'result' | 'support' | 'log' | 'json';
+    type Tab = 'result' | 'plan' | 'requirements' | 'support' | 'log' | 'json';
     const [activeTab, setActiveTab] = useState<Tab>('result');
     
     const handleDownloadResult = () => {
@@ -245,7 +260,7 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
     };
 
     const allArtifacts = [...state.state.artifacts];
-    const hasReadmeArtifact = state.state.artifacts.some(a => a.key.toLowerCase() === 'readme.md');
+    const hasReadmeArtifact = state.state.artifacts.some(a => a.key && a.key.toLowerCase() === 'readme.md');
 
     // If there's a final result but no corresponding artifact, create one virtually for the list.
     // This makes the UI more robust against the LLM not perfectly following instructions.
@@ -257,7 +272,7 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
     }
 
     const supportArtifacts = allArtifacts.filter(
-        artifact => !['rag_results'].includes(artifact.key)
+        artifact => artifact.key && !['rag_results'].includes(artifact.key)
     );
 
 
@@ -303,6 +318,8 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
 
             <div className="flex gap-2 border-b border-border-muted pb-1 overflow-x-auto">
                 <TabButton tab="result" label="Result" />
+                <TabButton tab="plan" label="Plan" />
+                <TabButton tab="requirements" label="Requirements" />
                 <TabButton tab="support" label="Support Artifacts" />
                 <TabButton tab="log" label="Run Log" />
                 <TabButton tab="json" label="JSON State" />
@@ -331,6 +348,46 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                     </ResultCard>
                 )}
 
+                {activeTab === 'plan' && (
+                    <ResultCard 
+                        title="Project Plan"
+                        actions={state.state.artifacts.find(a => a.key === 'Plan.md') ? (
+                            <button onClick={() => {
+                                const plan = state.state.artifacts.find(a => a.key === 'Plan.md');
+                                if (plan) downloadFile(plan.value, 'Plan.md', 'text/markdown');
+                            }} className="flex items-center gap-2 text-sm text-primary-end hover:text-primary-start transition-colors">
+                                <DownloadIcon className="w-4 h-4" /> Download Plan
+                            </button>
+                        ) : undefined}
+                    >
+                        {state.state.artifacts.find(a => a.key === 'Plan.md') ? (
+                            <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: parseAndSanitizeMarkdown(state.state.artifacts.find(a => a.key === 'Plan.md')!.value) }} />
+                        ) : (
+                            <p className="text-text-muted text-center py-12">Plan not yet generated.</p>
+                        )}
+                    </ResultCard>
+                )}
+
+                {activeTab === 'requirements' && (
+                    <ResultCard 
+                        title="Requirements Specification"
+                        actions={state.state.artifacts.find(a => a.key === 'Requirements.md') ? (
+                            <button onClick={() => {
+                                const req = state.state.artifacts.find(a => a.key === 'Requirements.md');
+                                if (req) downloadFile(req.value, 'Requirements.md', 'text/markdown');
+                            }} className="flex items-center gap-2 text-sm text-primary-end hover:text-primary-start transition-colors">
+                                <DownloadIcon className="w-4 h-4" /> Download Requirements
+                            </button>
+                        ) : undefined}
+                    >
+                        {state.state.artifacts.find(a => a.key === 'Requirements.md') ? (
+                            <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: parseAndSanitizeMarkdown(state.state.artifacts.find(a => a.key === 'Requirements.md')!.value) }} />
+                        ) : (
+                            <p className="text-text-muted text-center py-12">Requirements not yet generated.</p>
+                        )}
+                    </ResultCard>
+                )}
+
                 {activeTab === 'support' && (
                     <ResultCard 
                         title="Generated Artifacts"
@@ -343,7 +400,7 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                          {supportArtifacts.length > 0 ? (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {supportArtifacts.map((artifact, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-border-muted group hover:border-primary-start/50 transition-colors">
+                                    <div key={`artifact-${i}-${artifact.key}`} className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-border-muted group hover:border-primary-start/50 transition-colors">
                                         <div className="flex items-center gap-3 overflow-hidden">
                                             <div className="p-2 bg-slate-900 rounded-md">
                                                 {/* Simple extension icon logic */}
@@ -372,22 +429,31 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
 
                 {activeTab === 'log' && (
                     <ResultCard title="Execution Log">
-                        <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+                        <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                              {state.runLog.length > 0 ? (
-                                [...state.runLog].reverse().map((entry, i) => (
-                                    <div key={i} className="flex gap-4 p-3 rounded-lg bg-white/5 border border-border-muted">
-                                        <div className="flex-shrink-0">
-                                            <AgentIcon agent={entry.agent} />
-                                        </div>
-                                        <div>
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="font-bold text-sm text-text-primary">{entry.agent}</span>
-                                                <span className="text-xs text-text-muted">Iteration {entry.iteration}</span>
+                                [...state.runLog].reverse().map((entry, i) => {
+                                    const timestamp = new Date().toLocaleTimeString();
+                                    const summary = String(entry.summary || '');
+                                    const tools = summary.includes('rag_query') ? 'RAG' : 
+                                                 summary.includes('added') ? 'Added Step' : 
+                                                 summary.includes('created') ? 'File Write' : '';
+                                    return (
+                                        <div key={`log-${i}`} className="p-3 rounded-lg bg-white/5 border border-border-muted">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <AgentIcon agent={entry.agent} />
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-bold text-sm text-text-primary">{entry.agent}</span>
+                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary-start/20 text-primary-end whitespace-nowrap">Iter {entry.iteration}</span>
+                                                        {tools && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">{tools}</span>}
+                                                        <span className="text-xs text-text-muted">{timestamp}</span>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <p className="text-sm text-text-secondary">{entry.summary}</p>
+                                            <p className="text-sm text-text-secondary ml-11">{summary}</p>
                                         </div>
-                                    </div>
-                                ))
+                                    );
+                                })
                             ) : (
                                 <p className="text-text-muted text-center py-12">Log is empty.</p>
                             )}
