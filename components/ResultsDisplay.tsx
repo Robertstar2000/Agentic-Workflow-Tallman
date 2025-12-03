@@ -432,19 +432,23 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
                              {state.runLog.length > 0 ? (
                                 [...state.runLog].reverse().map((entry, i) => {
+                                    if (!entry || typeof entry !== 'object') return null;
                                     const timestamp = new Date().toLocaleTimeString();
-                                    const summary = String(entry.summary || '');
+                                    const agent = entry.agent || 'Planner';
+                                    const iteration = entry.iteration || 0;
+                                    const summary = String(entry.summary || 'No summary available');
                                     const tools = summary.includes('rag_query') ? 'RAG' : 
+                                                 summary.includes('internet_query') ? 'Internet Search' :
                                                  summary.includes('added') ? 'Added Step' : 
                                                  summary.includes('created') ? 'File Write' : '';
                                     return (
-                                        <div key={`log-${i}`} className="p-3 rounded-lg bg-white/5 border border-border-muted">
+                                        <div key={`log-${i}-${iteration}`} className="p-3 rounded-lg bg-white/5 border border-border-muted">
                                             <div className="flex items-center gap-3 mb-2">
-                                                <AgentIcon agent={entry.agent} />
+                                                <AgentIcon agent={agent} />
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="font-bold text-sm text-text-primary">{entry.agent}</span>
-                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary-start/20 text-primary-end whitespace-nowrap">Iter {entry.iteration}</span>
+                                                        <span className="font-bold text-sm text-text-primary">{agent}</span>
+                                                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary-start/20 text-primary-end whitespace-nowrap">Iter {iteration}</span>
                                                         {tools && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">{tools}</span>}
                                                         <span className="text-xs text-text-muted">{timestamp}</span>
                                                     </div>
@@ -453,7 +457,7 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                                             <p className="text-sm text-text-secondary ml-11">{summary}</p>
                                         </div>
                                     );
-                                })
+                                }).filter(Boolean)
                             ) : (
                                 <p className="text-text-muted text-center py-12">Log is empty.</p>
                             )}
