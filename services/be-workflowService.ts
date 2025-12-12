@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import type { LLMSettings, WorkflowState, ProviderSettings } from "../types";
+import type { LLMSettings, WorkflowState, ProviderSettings, RunLogEntry, WorkflowStatus } from "../types";
+import { OLLAMA_CONFIG } from "./ollamaService";
 
 /**
  * Creates a summarized and truncated version of the workflow state to be used in the LLM prompt,
@@ -11,9 +12,9 @@ import type { LLMSettings, WorkflowState, ProviderSettings } from "../types";
 const prepareStateForPrompt = (state: WorkflowState): object => {
     const stateForPrompt = JSON.parse(JSON.stringify(state)); // Deep copy
 
-    // Truncate runLog to maxIterations, keeping the most recent entries
-    if (stateForPrompt.runLog.length > state.maxIterations) {
-        stateForPrompt.runLog = stateForPrompt.runLog.slice(-state.maxIterations);
+    // Truncate runLog to the most recent 300 entries to avoid payload bloat
+    if (stateForPrompt.runLog.length > 300) {
+        stateForPrompt.runLog = stateForPrompt.runLog.slice(-300);
     }
 
     // These are output fields and not needed for the model's next turn.
@@ -61,9 +62,14 @@ You operate in a loop of three agents: Planner, Worker, and QA.
 ${ragInstruction}
 **Context Management Rules:**
 Your context window is limited. To ensure the workflow runs smoothly, you MUST adhere to the following rules for managing artifact size:
-- **Code Artifacts:** When generating code, limit snippets to a maximum of 500 lines. If a file needs to be larger, you MUST instruct the Planner to add new steps to create multiple smaller files and use imports/includes to connect them.
+- **Code Artifacts:** When generating code, limit snippets to a maximum of 300 lines per iteration. If a file needs to be larger, you MUST split it across iterations and let QA approve appending more in follow-on iterations. For larger structures, instruct the Planner to add new steps and use imports/includes to connect them.
 - **Text Artifacts:** If you are generating a large text document (e.g., a report, research notes), you MUST summarize it if the full text is not essential for the next immediate step. Store the full text in one artifact and create a separate artifact with a summary (e.g., 'report.md' and 'report_summary.md'). This helps keep the context for subsequent steps clean and focused.
 - **Focus:** For each turn, focus on the user's main goal, the current step in the plan, feedback from other agents (in 'notes'), and the most recent log entries.
+- **Verbosity:** Planner responses should be concise. Worker and QA responses should be verbose, explicitly describing actions taken and results produced so progress is observable in logs.
+
+**ABOSOLUTE PROHIBITIONS - VIOLATION = IMMEDIATE FAILURE:**
+- **NEVER EXECUTE STEPS BACKWARDS**: The workflow can ONLY move FORWARD through steps. You CANNOT return to a previous step number. Once a step is completed, it stays completed. The current step number must ALWAYS increase or stay the same.
+- **NEVER COMMUNICATE WITH EXTERNAL PARTIES**: You MUST NOT plan to contact, email, send quotes, or otherwise communicate with other parties, companies, or individuals outside of this system.
 
 **Workflow Execution Flow:**
 
@@ -76,8 +82,8 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
         - Step 2: "Refine goal and generate all steps needed to achieve the goal"
         - Step 3: "[Implement requirement: crisp description of first bullet sub requirement from step 1]"
         - Step 4: "[Implement requirement: crisp description of second bullet sub requirement from step 1]" then continue with steps until all bullet requirements have their own step ... and so on ...
-        - Step N-1: "[Implement last requirement: crisp description of last bullet sub requirement from step 1]"
-        - Step N: "Summarize final answer to the goal and generate final result artifact (result.html/result.csv/result.md)"
+        - Step N-1: "Generate final result artifact (result.html/result.csv/result.md) from completed work"
+        - Step N: "Summarize the final product from context and explain the result"
         
         **CRITICAL REQUIREMENTS:**
         1. Create a MINIMUM of 5 steps and MAXIMUM of 15 steps
@@ -87,6 +93,7 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
         5. Set progress to "Planning complete. Ready to execute step 1."
         6. Log "Planner: Created comprehensive plan with X steps"
         7. After creating the plan, STOP planning and let the Worker agent take over
+        8. If the goal involves code, an application, an app, a program, a calculation, software, a script, or otherwise needs software code, you MUST choose Java for backend/logic and HTML for UI, and target a single entry file named "index.html" for the UI output. Do NOT choose any other languages.
         
         **WRONG (DO NOT DO THIS):** Creating only Step 1 and planning to add more later
         **CORRECT (DO THIS):** Creating all 5-15 steps in the 'steps' array right now, then stopping
@@ -102,6 +109,7 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
         2. Step Name - Description of what will be accomplished
         This will display in the sidebar and be downloadable.
     -   **Steps 3-X - Implementation:** Each step creates artifacts for accomplishing a requirement (e.g., \`step_3_database_schema.sql\`, \`step_4_api_endpoints.js\`, \`step_5_ui_component.tsx\`).
+    -   **Final Assembly (Step N-1):** You may loop as needed to gather content from all prior steps and concatenate into the final result artifact.
     -   **Final Step - Result:** Create the final deliverable as \`result.html\` (for web apps), \`result.csv\` (for data), or \`result.md\` (for reports). This will be displayed in the UI as the main result.
     -   **Final Step Completion:** On the FINAL step, if this is the fourth iteration of the final step, you MUST complete the work and create the final result artifact regardless of perfection. Do not continue iterating.
     -   **Reading Previous Work:** To access previous artifacts, create a \`rag_query\` artifact with your search query (e.g., {"key": "rag_query", "value": "requirements"}). The system will provide results in \`rag_results\` artifact in the next iteration.
@@ -121,7 +129,7 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
             -   A "Getting Started" or "Usage" section with instructions. If \`resultType\` is "code", this means installation (\`npm install\`) and execution (\`npm run dev\`) commands. If \`resultType\` is "text", this means explaining the findings or how to read the report.
             -   A "Technical Details" or "Methodology" section if applicable, detailing architecture or dependencies.
         3.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
-        4.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field.
+        4.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field. If the deliverable is software, code, tables, or calculations, this summary must describe in plain language what the code/data does and key outcomes (not just a terse code snippet).
             -   **Crucial for Text Tasks:** If the user's goal was a question or analysis (e.g., "What is the capital of X?", "Summarize this report"), the summary MUST contain the *actual answer* or *key findings*, not just a statement that the task was completed (e.g., do NOT say "I found the answer", say "The answer is X").
         5.  **MANDATORY: Set Status:** Finally, set the \`status\` to "completed".
 
@@ -191,58 +199,108 @@ const responseSchema = {
     required: ['goal', 'maxIterations', 'currentIteration', 'status', 'runLog', 'state', 'finalResultMarkdown', 'finalResultSummary']
 };
 
+const _appendNote = (existing: string, addition: string) => {
+    if (!existing) return addition;
+    return `${existing} | ${addition}`;
+};
 
-const _runGoogleWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent?: string): Promise<WorkflowState> => {
-    throw new Error("Google provider is not supported. Please use Ollama.");
+const _normalizeWorkflowState = (raw: any, fallbackGoal: string): WorkflowState => {
+    const allowedStatuses: WorkflowStatus[] = ['running', 'completed', 'needs_clarification', 'error'];
+    const safeStatus: WorkflowStatus = allowedStatuses.includes(raw?.status) ? raw.status : 'running';
 
-    const prompt = getSystemPrompt(currentState, ragContent);
+    const safeResultType = raw?.resultType === 'code' || raw?.resultType === 'text' ? raw.resultType : undefined;
 
-    const response = await ai.models.generateContent({
-        model: settings.model,
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: responseSchema,
-            temperature: 0.7,
+    const safeState: WorkflowState = {
+        goal: typeof raw?.goal === 'string' ? raw.goal : fallbackGoal,
+        maxIterations: Number.isInteger(raw?.maxIterations) ? raw.maxIterations : 10,
+        currentIteration: Number.isInteger(raw?.currentIteration) ? raw.currentIteration : 0,
+        status: safeStatus,
+        runLog: Array.isArray(raw?.runLog) ? raw.runLog.filter((e: any) =>
+            e && Number.isInteger(e.iteration) && typeof e.agent === 'string' && typeof e.summary === 'string'
+        ) : [],
+        state: {
+            goal: typeof raw?.state?.goal === 'string' ? raw.state.goal : fallbackGoal,
+            steps: Array.isArray(raw?.state?.steps) ? raw.state.steps : [],
+            initialPlan: Array.isArray(raw?.state?.initialPlan) ? raw.state.initialPlan : [],
+            artifacts: Array.isArray(raw?.state?.artifacts) ? raw.state.artifacts : [],
+            notes: typeof raw?.state?.notes === 'string' ? raw.state.notes : '',
+            progress: typeof raw?.state?.progress === 'string' ? raw.state.progress : '',
         },
-    });
+        finalResultMarkdown: typeof raw?.finalResultMarkdown === 'string' ? raw.finalResultMarkdown : '',
+        finalResultSummary: typeof raw?.finalResultSummary === 'string' ? raw.finalResultSummary : '',
+        resultType: safeResultType,
+    };
 
-    try {
-        const jsonText = response.text;
-        const newState = JSON.parse(jsonText) as WorkflowState;
-        return newState;
-    } catch (e) {
-        console.error("Failed to parse JSON response from Google:", response.text);
-        throw new Error("The model returned an invalid response. Please try again.");
+    return safeState;
+};
+
+const _parseAndValidateWorkflow = (responseData: any, fallbackGoal: string): WorkflowState => {
+    if (!responseData || typeof responseData.response !== 'string') {
+        throw new Error('LLM response missing "response" field');
     }
+    let parsed: WorkflowState;
+    try {
+        parsed = JSON.parse(responseData.response);
+    } catch (err) {
+        throw new Error('LLM returned invalid JSON');
+    }
+    return _normalizeWorkflowState(parsed, fallbackGoal);
+};
+
+const _detectStepNumber = (state: WorkflowState): number => {
+    const match = state.state.progress?.match(/step\s+(\d+)/i);
+    if (match) return parseInt(match[1], 10);
+    return 0;
 };
 
 const _runOllamaWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
-    const url = `${settings.baseURL}/api/generate`;
+    const baseURL = settings.baseURL || OLLAMA_CONFIG.host;
+    const url = `${baseURL}/api/generate`;
     const prompt = getSystemPrompt(currentState, ragContent);
+    const stepNum = _detectStepNumber(currentState);
+    const totalSteps = currentState.state.steps?.length || 0;
+    const isPlanning = totalSteps === 0;
+    const isFirstStep = stepNum === 1;
+    const isFinalStep = totalSteps > 0 && stepNum === totalSteps;
+    const temperature = (isPlanning || isFirstStep || isFinalStep) ? 0.7 : 0.3;
     const body = {
-        model: settings.model,
+        model: settings.model || process.env.MODEL || 'llama3.2',
         prompt: prompt,
         format: 'json',
         stream: false,
+        options: {
+            num_ctx: 15000,
+            temperature
+        }
     };
-    
+
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
+            const controller = new AbortController();
+            // First attempt 500s; second retry 1000s
+            const timeoutMs = attempt === 0 ? 500000 : 1000000;
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             const response = await fetchFn(url, {
                 method: 'POST',
                 body: JSON.stringify(body),
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
             });
+            clearTimeout(timeoutId);
             if (!response.ok) {
                 const errorText = await response.text();
                 throw new Error(`Ollama API error (${response.status}): ${errorText}`);
             }
             const responseData = await response.json();
-            return JSON.parse(responseData.response) as WorkflowState;
+            return _parseAndValidateWorkflow(responseData, currentState.goal);
         } catch (e) {
-            lastError = e instanceof Error ? e : new Error(String(e));
+            const err = e instanceof Error ? e : new Error(String(e));
+            if (err.name === 'AbortError') {
+                lastError = new Error(`Ollama request timed out after ${attempt === 0 ? '500s' : '1000s'}; generation took too long or server is busy.`);
+            } else {
+                lastError = err;
+            }
             if (attempt < 2) {
                 await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
             }
@@ -251,103 +309,7 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
     throw lastError || new Error("Ollama request failed after 3 attempts");
 };
 
-const _runOpenAIWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
-    if (!settings.apiKey) {
-        throw new Error(`API key is missing for ${settings.baseURL}.`);
-    }
-    const url = `${settings.baseURL}/chat/completions`;
-    const prompt = getSystemPrompt(currentState, ragContent);
-    const body = {
-        model: settings.model,
-        messages: [{ role: 'system', content: prompt }],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-    };
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.apiKey}`
-    };
-    const response = await fetchFn(url, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(body)
-    });
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API error for ${settings.baseURL} (${response.status}): ${errorText}`);
-    }
-    const data = await response.json();
-    try {
-        return JSON.parse(data.choices[0].message.content) as WorkflowState;
-    } catch (e) {
-        console.error(`Failed to parse JSON from ${settings.baseURL} response:`, data.choices[0].message.content);
-        throw new Error("The model returned invalid JSON.");
-    }
-};
 
-const _runClaudeWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
-    if (!settings.apiKey) {
-        throw new Error("API key is missing for Claude provider.");
-    }
-    const url = `${settings.baseURL}/messages`;
-
-    const systemPromptPart = getSystemPrompt(currentState, ragContent).split('**Current State:**')[0];
-    const userPrompt = `
-**Current State:**
-You are on iteration ${currentState.currentIteration + 1} of ${currentState.maxIterations}.
-The current state of the workflow is provided below in JSON format. Do not repeat it in your response.
-
-\`\`\`json
-${JSON.stringify(currentState, null, 2)}
-\`\`\`
-
-**Your Task:**
-Perform the next logical agent action (Planner -> Worker -> QA).
-You MUST respond with only the raw JSON object representing the full, updated workflow state. Do not include any other text, explanations, or markdown formatting like \`\`\`json ... \`\`\`. Your entire response must be the JSON object itself.
-`;
-
-    const body = {
-        model: settings.model,
-        max_tokens: 4096,
-        system: systemPromptPart,
-        messages: [{ role: 'user', content: userPrompt }],
-        temperature: 0.7,
-    };
-    const headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': settings.apiKey,
-        'anthropic-version': '2023-06-01'
-    };
-    
-    const response = await fetchFn(url, {
-        method: 'POST',
-        headers: headers,
-        body: JSON.stringify(body)
-    });
-    
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Claude API error (${response.status}): ${errorText}`);
-    }
-    
-    const data = await response.json();
-    try {
-        const responseText = data.content[0].text;
-        const jsonMatch = responseText.match(/{[\s\S]*}/);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]) as WorkflowState;
-        }
-        throw new Error("No valid JSON object found in the response.");
-    } catch (e) {
-        console.error("Failed to parse JSON from Claude response:", data.content[0]?.text, e);
-        throw new Error("Claude returned a response that could not be parsed as JSON.");
-    }
-};
-
-const _runOpenRouterWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
-    // OpenRouter uses the OpenAI-compatible API
-    return _runOpenAIWorkflow(currentState, settings, ragContent, fetchFn);
-};
 
 /**
  * Performs a simple keyword-based search on the provided content.
@@ -402,36 +364,47 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
     const providerSettings = settings[provider];
     const fetchFn = fetchOverride || fetch;
     
-    let newState: WorkflowState;
+    const attempts = 2; // first retry silent, second failure surfaces
+    let newState: WorkflowState | null = null;
+    let lastError: Error | null = null;
 
-    switch (provider) {
-        case 'google':
-            newState = await _runGoogleWorkflow(currentState, providerSettings, ragContent);
-            break;
-        case 'ollama':
-            newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn);
-            break;
-        case 'openai':
-            newState = await _runOpenAIWorkflow(currentState, providerSettings, ragContent, fetchFn);
-            break;
-        case 'claude':
-            newState = await _runClaudeWorkflow(currentState, providerSettings, ragContent, fetchFn);
-            break;
-        case 'openrouter':
-            newState = await _runOpenRouterWorkflow(currentState, providerSettings, ragContent, fetchFn);
-            break;
-        case 'groq':
-        case 'samba':
-        case 'cerberus':
-            // Assume OpenAI-compatible API
-            newState = await _runOpenAIWorkflow(currentState, providerSettings, ragContent, fetchFn);
-            break;
-        default:
-            throw new Error(`Unsupported provider: ${provider}`);
+    for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+            switch (provider) {
+                case 'ollama':
+                    newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn);
+                    break;
+                default:
+                    throw new Error(`Unsupported provider: ${provider}`);
+            }
+            break; // success
+        } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+            if (attempt === 0) {
+                // Silent retry after brief delay
+                await new Promise(resolve => setTimeout(resolve, 500));
+                continue;
+            }
+        }
+    }
+
+    if (!newState) {
+        const failureMessage = `Workflow error: ${lastError?.message || 'Unknown error'}`;
+        const failureLog: RunLogEntry = { iteration: currentState.currentIteration + 1, agent: 'QA', summary: failureMessage };
+        return {
+            ...currentState,
+            status: 'error',
+            runLog: [...currentState.runLog, failureLog],
+            state: {
+                ...currentState.state,
+                notes: _appendNote(currentState.state.notes, failureMessage),
+            }
+        };
     }
 
     const ragQueryArtifact = newState.state.artifacts.find(a => a.key === 'rag_query');
     const internetQueryArtifact = newState.state.artifacts.find(a => a.key === 'internet_query');
+    const iterIndex = currentState.currentIteration + 1;
 
     if (ragQueryArtifact) {
         newState.state.artifacts = newState.state.artifacts.filter(a => a.key !== 'rag_query');
@@ -446,9 +419,11 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
         if (combinedContent.trim()) {
             const ragResults = _executeRAG(query, combinedContent);
             newState.state.artifacts.push({ key: 'rag_results', value: ragResults });
-            newState.state.notes = `Search completed for "${query}". Results available in 'rag_results' artifact.`;
+            newState.state.notes = _appendNote(newState.state.notes, `Search completed for "${query}". Results in 'rag_results'.`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `RAG search for "${query}" added rag_results` }];
         } else {
-            newState.state.notes = `No artifacts or documents available to search.`;
+            newState.state.notes = _appendNote(newState.state.notes, `No artifacts or documents available to search.`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `RAG search for "${query}" skipped - no content` }];
         }
     }
 
@@ -458,14 +433,24 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
         
         try {
             const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`;
-            const response = await fetchFn(searchUrl);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const response = await fetchFn(searchUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
             const data = await response.json();
-            const results = data.RelatedTopics?.slice(0, 5).map((t: any) => t.Text || t.FirstURL).join('\n\n') || 'No results found.';
+            const related = Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [];
+            const snippets = related
+                .flatMap((item: any) => item?.Text ? [item.Text] : (Array.isArray(item?.Topics) ? item.Topics.map((t: any) => t?.Text) : []))
+                .filter(Boolean)
+                .slice(0, 10);
+            const results = snippets.length > 0 ? snippets.join('\n\n') : 'No results found.';
             newState.state.artifacts.push({ key: 'internet_results', value: results });
-            newState.state.notes = `Internet search completed for "${query}". Results available in 'internet_results' artifact.`;
+            newState.state.notes = _appendNote(newState.state.notes, `Internet search completed for "${query}". Collected ${snippets.length || 0} snippets; QA validate relevance.`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search for "${query}" returned ${snippets.length || 0} snippets` }];
         } catch (e) {
             newState.state.artifacts.push({ key: 'internet_results', value: 'Internet search failed. Please try a different query.' });
-            newState.state.notes = `Internet search failed for "${query}".`;
+            newState.state.notes = _appendNote(newState.state.notes, `Internet search failed for "${query}".`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search failed for "${query}"` }];
         }
     }
 
@@ -486,34 +471,13 @@ export const testProviderConnection = async (settings: LLMSettings, fetchOverrid
 
     try {
         switch (provider) {
-            case 'google':
-                throw new Error("Google provider is not supported. Please use Ollama.");
             case 'ollama':
-                const ollamaUrl = `${providerSettings.baseURL}/api/tags`;
+                const baseURL = providerSettings.baseURL || OLLAMA_CONFIG.host;
+                const ollamaUrl = `${baseURL}/api/tags`;
                 const ollamaResp = await fetchFn(ollamaUrl);
                 if (!ollamaResp.ok) throw new Error(`Ollama connection failed: ${ollamaResp.statusText}`);
                 const ollamaData = await ollamaResp.json();
                 return Array.isArray(ollamaData.models);
-            case 'openai':
-            case 'openrouter':
-            case 'groq':
-            case 'samba':
-            case 'cerberus':
-                 if (!providerSettings.apiKey) throw new Error("API Key is missing.");
-                const url = `${providerSettings.baseURL}/models`;
-                const headers = { 'Authorization': `Bearer ${providerSettings.apiKey}` };
-                const resp = await fetchFn(url, { headers });
-                if (!resp.ok) throw new Error(`Connection failed: ${resp.statusText}`);
-                await resp.json();
-                return true;
-            case 'claude':
-                 if (!providerSettings.apiKey) throw new Error("API Key is missing.");
-                const claudeUrl = `${providerSettings.baseURL}/messages`;
-                const claudeHeaders = { 'x-api-key': providerSettings.apiKey, 'anthropic-version': '2023-06-01' };
-                 const claudeResp = await fetchFn(claudeUrl, { method: 'POST', headers: claudeHeaders, body: JSON.stringify({ model: providerSettings.model, max_tokens: 1, messages: [{role: 'user', content: 'test'}]}) });
-                // Claude returns 400 for a bad request but it means auth is ok. 401/403 is a failure.
-                if (claudeResp.status === 401 || claudeResp.status === 403) throw new Error(`Connection failed: ${claudeResp.statusText}`);
-                return true;
             default:
                 return false;
         }

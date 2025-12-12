@@ -143,6 +143,8 @@ const AgentStatusPanel: React.FC<{ state: WorkflowState }> = ({ state }) => {
     const currentAgent = lastLog?.agent || 'Planner';
     const summary = lastLog?.summary || state.state.progress || 'Initializing...';
     const displayText = String(summary).substring(0, 80);
+    const tools = summary.toLowerCase().includes('rag') ? 'RAG' :
+        summary.toLowerCase().includes('internet') ? 'Internet' : '';
 
     return (
         <div className="bg-card-bg border border-border-muted rounded-xl p-3 backdrop-blur-lg">
@@ -153,6 +155,7 @@ const AgentStatusPanel: React.FC<{ state: WorkflowState }> = ({ state }) => {
                         <span className="font-semibold text-text-primary text-sm">{currentAgent}</span>
                         <StatusIndicator status={state.status} />
                         <span className="text-xs text-text-muted">Iter {state.currentIteration}/{state.maxIterations}</span>
+                        {tools && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300">{tools}</span>}
                     </div>
                     <div className="overflow-hidden">
                         <p className="text-xs text-text-secondary truncate">{displayText}</p>
@@ -205,16 +208,20 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
     type Tab = 'result' | 'plan' | 'requirements' | 'support' | 'log' | 'json';
     const [activeTab, setActiveTab] = useState<Tab>('result');
     
+    const resultArtifactFallback = state.state.artifacts.find(a => a.key?.toLowerCase().startsWith('result')) 
+        || state.state.artifacts.find(a => a.key?.toLowerCase() === 'readme.md');
+    const displayResult = state.finalResultMarkdown || resultArtifactFallback?.value || '';
+
     const handleDownloadResult = () => {
-        if (!state.finalResultMarkdown) return;
+        if (!displayResult) return;
         if (state.resultType === 'text') {
-            downloadResultAsPdf(state.finalResultMarkdown);
+            downloadResultAsPdf(displayResult);
         } else {
-            downloadFile(state.finalResultMarkdown, 'README.md', 'text/markdown');
+            downloadFile(displayResult, 'README.md', 'text/markdown');
         }
     }
 
-    const downloadButtonLabel = state.resultType === 'text' ? 'Download README.pdf' : 'Download README.md';
+    const downloadButtonLabel = 'Download the Final Report';
 
     const handleDownloadArtifact = (artifact: Artifact) => {
         let mimeType = 'text/plain;charset=utf-8';
@@ -331,8 +338,8 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                         title="Final Result" 
                         actions={<button onClick={handleDownloadResult} className="flex items-center gap-2 text-sm text-primary-end hover:text-primary-start transition-colors"><DownloadIcon className="w-4 h-4" />{downloadButtonLabel}</button>}
                     >
-                        {state.finalResultMarkdown ? (
-                            <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: parseAndSanitizeMarkdown(state.finalResultMarkdown) }} />
+                        {displayResult ? (
+                            <div className="prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: parseAndSanitizeMarkdown(displayResult) }} />
                         ) : (
                              <div className="flex flex-col items-center justify-center h-64 text-text-muted">
                                 <SpinnerIcon className="w-8 h-8 mb-4 animate-spin opacity-50" />
@@ -430,19 +437,19 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                 {activeTab === 'log' && (
                     <ResultCard title="Execution Log">
                         <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
-                             {state.runLog.length > 0 ? (
+                             {state.runLog && state.runLog.length > 0 ? (
                                 [...state.runLog].reverse().map((entry, i) => {
                                     if (!entry || typeof entry !== 'object') return null;
                                     const timestamp = new Date().toLocaleTimeString();
                                     const agent = entry.agent || 'Planner';
-                                    const iteration = entry.iteration || 0;
-                                    const summary = String(entry.summary || 'No summary available');
-                                    const tools = summary.includes('rag_query') ? 'RAG' : 
+                                    const iteration = entry.iteration || state.currentIteration || 0;
+                                    const summary = String(entry.summary || entry.toString() || 'No summary available');
+                                    const tools = summary.includes('rag_query') ? 'RAG' :
                                                  summary.includes('internet_query') ? 'Internet Search' :
-                                                 summary.includes('added') ? 'Added Step' : 
+                                                 summary.includes('added') ? 'Added Step' :
                                                  summary.includes('created') ? 'File Write' : '';
                                     return (
-                                        <div key={`log-${i}-${iteration}`} className="p-3 rounded-lg bg-white/5 border border-border-muted">
+                                        <div key={`log-${i}-${iteration}-${agent}`} className="p-3 rounded-lg bg-white/5 border border-border-muted">
                                             <div className="flex items-center gap-3 mb-2">
                                                 <AgentIcon agent={agent} />
                                                 <div className="flex-1">
@@ -459,7 +466,11 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                                     );
                                 }).filter(Boolean)
                             ) : (
-                                <p className="text-text-muted text-center py-12">Log is empty.</p>
+                                <div className="text-center text-text-muted py-12">
+                                    <TerminalIcon className="w-12 h-12 mb-4 mx-auto opacity-50" />
+                                    <p>No execution logs available yet.</p>
+                                    <p className="text-sm text-text-muted mt-2">Run the workflow to see agent actions here.</p>
+                                </div>
                             )}
                         </div>
                     </ResultCard>

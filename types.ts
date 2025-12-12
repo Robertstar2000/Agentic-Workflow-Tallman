@@ -12,28 +12,13 @@ export interface ProviderSettings {
 }
 
 /**
- * Defines the overall LLM settings for the application, including the selected provider
- * and the configurations for all available providers.
+ * Defines the overall LLM settings for the application, using Ollama only.
  */
 export interface LLMSettings {
-    /** The currently active LLM provider. */
-    provider: 'google' | 'openai' | 'claude' | 'openrouter' | 'ollama' | 'groq' | 'samba' | 'cerberus';
-    /** Settings for the Google provider. */
-    google: ProviderSettings;
-    /** Settings for the OpenAI provider. */
-    openai: ProviderSettings;
-    /** Settings for the Anthropic Claude provider. */
-    claude: ProviderSettings;
-    /** Settings for the OpenRouter provider. */
-    openrouter: ProviderSettings;
-    /** Settings for a local Ollama provider. */
+    /** The currently active LLM provider (always Ollama). */
+    provider: 'ollama';
+    /** Settings for the Ollama provider. */
     ollama: ProviderSettings;
-    /** Settings for the Groq provider. */
-    groq: ProviderSettings;
-    /** Settings for the Samba provider. */
-    samba: ProviderSettings;
-    /** Settings for the Cerberus provider. */
-    cerberus: ProviderSettings;
 }
 
 /**

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { LockIcon, PlayIcon, SpinnerIcon, DocumentArrowUpIcon, BookOpenIcon } from './icons';
+import { LockIcon, PlayIcon, SpinnerIcon, DocumentArrowUpIcon } from './icons';
 
 /**
  * Props for the WorkflowInput component.
@@ -21,8 +21,10 @@ interface WorkflowInputProps {
     onRunWorkflow: () => void;
     /** Callback to start a workflow from a JSON state file. */
     onRunWorkflowFromStateFile: (file: File) => void;
-    /** Callback to upload a knowledge file for RAG. */
-    onUploadKnowledge: (file: File) => void;
+    /** Callback to upload a goal-related file (text/JSON/etc). */
+    onUploadGoalFile: (file: File) => void;
+    /** Callback to upload a goal-related image. */
+    onUploadGoalImage: (file: File) => void;
     /** Flag indicating if a RAG content file has been provided. */
     ragContentProvided: boolean;
     /** Callback to open the login modal. */
@@ -47,14 +49,15 @@ export const WorkflowInput: React.FC<WorkflowInputProps> = ({
     isAuthenticated,
     onRunWorkflow,
     onRunWorkflowFromStateFile,
-    onUploadKnowledge,
-    ragContentProvided,
     onLoginClick,
     guidanceMode,
     setGuidanceMode,
+    onUploadGoalFile,
+    onUploadGoalImage,
 }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const knowledgeFileInputRef = useRef<HTMLInputElement>(null);
+    const goalFileInputRef = useRef<HTMLInputElement>(null);
+    const goalImageInputRef = useRef<HTMLInputElement>(null);
 
     const handleStateFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -64,20 +67,21 @@ export const WorkflowInput: React.FC<WorkflowInputProps> = ({
         e.target.value = '';
     };
     
-    const handleKnowledgeFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleGoalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            onUploadKnowledge(file);
+            onUploadGoalFile(file);
         }
         e.target.value = '';
     };
 
-    const knowledgeButtonClasses = `w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 font-semibold bg-slate-800/60 border rounded-full shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
-        ragContentProvided
-            ? 'border-success text-success hover:bg-success/20'
-            : 'border-border-muted text-text-secondary hover:bg-slate-700/80'
-    }`;
-
+    const handleGoalImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            onUploadGoalImage(file);
+        }
+        e.target.value = '';
+    };
 
     return (
         <div className="flex flex-col gap-4">
@@ -168,15 +172,25 @@ export const WorkflowInput: React.FC<WorkflowInputProps> = ({
                             <DocumentArrowUpIcon className="w-5 h-5" />
                             <span>Run from File</span>
                         </button>
-                        <input type="file" ref={knowledgeFileInputRef} onChange={handleKnowledgeFileSelect} accept=".txt,.md" className="hidden" />
+                        <input type="file" ref={goalFileInputRef} onChange={handleGoalFileSelect} accept=".txt,.md,.json,.csv,.pdf" className="hidden" />
                         <button
-                            onClick={() => knowledgeFileInputRef.current?.click()}
+                            onClick={() => goalFileInputRef.current?.click()}
                             disabled={isRunning}
-                            className={knowledgeButtonClasses}
-                            aria-label="Upload a knowledge file for context"
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 font-semibold text-text-secondary bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-full shadow-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Attach a goal file"
                         >
-                            <BookOpenIcon className="w-5 h-5" />
-                            <span>{ragContentProvided ? 'Knowledge Loaded' : 'Upload Knowledge'}</span>
+                            <DocumentArrowUpIcon className="w-5 h-5" />
+                            <span>Attach Goal File</span>
+                        </button>
+                        <input type="file" ref={goalImageInputRef} onChange={handleGoalImageSelect} accept="image/*" className="hidden" />
+                        <button
+                            onClick={() => goalImageInputRef.current?.click()}
+                            disabled={isRunning}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 font-semibold text-text-secondary bg-slate-800/60 hover:bg-slate-700/80 border border-border-muted rounded-full shadow-lg transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            aria-label="Attach a goal image"
+                        >
+                            <DocumentArrowUpIcon className="w-5 h-5" />
+                            <span>Attach Goal Image</span>
                         </button>
                     </>
                 )}

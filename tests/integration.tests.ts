@@ -2,7 +2,7 @@ import { describe, it, expect } from '../utils/testRunner';
 import { runWorkflowIteration } from '../services/be-workflowService';
 import type { LLMSettings, WorkflowState } from '../types';
 
-const MOCK_STATE: WorkflowState = {
+const BASE_STATE: WorkflowState = {
     goal: "Test goal",
     maxIterations: 10,
     currentIteration: 0,
@@ -19,17 +19,10 @@ const MOCK_STATE: WorkflowState = {
     finalResultSummary: '',
 };
 
-const MOCK_LLM_RESPONSE: WorkflowState = {
-    ...MOCK_STATE,
-    currentIteration: 0, 
-    state: {
-        ...MOCK_STATE.state,
-        notes: "Planner has created a plan.",
-        steps: ["Step 1", "Step 2"],
-        initialPlan: ["Step 1", "Step 2"],
-    },
-    runLog: [{ iteration: 1, agent: 'Planner', summary: 'Created initial plan.' }]
-};
+const makeSettings = (baseURL = 'http://localhost:11434', model = 'llama3.3:latest'): LLMSettings => ({
+    provider: 'ollama',
+    ollama: { model, baseURL }
+});
 
 /**
  * Executes integration tests for the core workflow service.
@@ -37,190 +30,119 @@ const MOCK_LLM_RESPONSE: WorkflowState = {
 export const runIntegrationTests = () => {
     describe('Workflow Service Integration', () => {
 
-        it('should call the OpenAI provider correctly', async () => {
-            let fetchCalled = false;
-            const mockFetch = async (url: any, options: any) => {
-                fetchCalled = true;
-                expect(url).toBe('https://api.openai.com/v1/chat/completions');
-                const body = JSON.parse(options.body);
-                expect(body.model).toBe('gpt-4o');
-                expect(options.headers['Authorization']).toBe('Bearer test-key');
-
-                return {
-                    ok: true,
-                    json: async () => ({
-                        choices: [{ message: { content: JSON.stringify(MOCK_LLM_RESPONSE) } }]
-                    })
-                } as any;
-            };
-
-            const settings: LLMSettings = {
-                provider: 'openai',
-                openai: { apiKey: 'test-key', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
-                google: { model: 'gemini-2.5-pro' },
-                claude: { apiKey: '', model: ''},
-                openrouter: { apiKey: '', model: ''},
-                ollama: { model: ''},
-                groq: { apiKey: '', model: '' },
-                samba: { apiKey: '', model: '' },
-                cerberus: { apiKey: '', model: '' },
-            };
-
-            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
-            expect(fetchCalled).toBeTruthy();
-            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
-        });
-
-        it('should call the Claude provider correctly', async () => {
-            let fetchCalled = false;
-            const mockFetch = async (url: any, options: any) => {
-                fetchCalled = true;
-                expect(url).toBe('https://api.anthropic.com/v1/messages');
-                const body = JSON.parse(options.body);
-                expect(body.model).toBe('claude-3-opus-20240229');
-                expect(options.headers['x-api-key']).toBe('claude-test-key');
-        
-                return {
-                    ok: true,
-                    json: async () => ({
-                        content: [{ text: JSON.stringify(MOCK_LLM_RESPONSE) }]
-                    })
-                } as any;
-            };
-        
-            const settings: LLMSettings = {
-                provider: 'claude',
-                claude: { apiKey: 'claude-test-key', model: 'claude-3-opus-20240229', baseURL: 'https://api.anthropic.com/v1' },
-                google: { model: 'gemini-2.5-pro' },
-                openai: { apiKey: '', model: ''},
-                openrouter: { apiKey: '', model: ''},
-                ollama: { model: ''},
-                groq: { apiKey: '', model: '' },
-                samba: { apiKey: '', model: '' },
-                cerberus: { apiKey: '', model: '' },
-            };
-        
-            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
-            expect(fetchCalled).toBeTruthy();
-            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
-        });
-
-        it('should call the Ollama provider correctly', async () => {
+        it('should call the Ollama provider and parse workflow state', async () => {
             let fetchCalled = false;
             const mockFetch = async (url: any, options: any) => {
                 fetchCalled = true;
                 expect(url).toBe('http://localhost:11434/api/generate');
                 const body = JSON.parse(options.body);
-                expect(body.model).toBe('llama3');
+                expect(body.model).toBe('llama3.3:latest');
                 expect(body.format).toBe('json');
         
                 return {
                     ok: true,
                     json: async () => ({
-                        response: JSON.stringify(MOCK_LLM_RESPONSE)
+                        response: JSON.stringify({
+                            ...BASE_STATE,
+                            state: { ...BASE_STATE.state, steps: ["Step 1", "Step 2"], initialPlan: ["Step 1", "Step 2"], notes: "Planner ready" },
+                            runLog: [{ iteration: 1, agent: 'Planner', summary: 'Created initial plan.' }]
+                        })
                     })
                 } as any;
             };
         
-            const settings: LLMSettings = {
-                provider: 'ollama',
-                ollama: { model: 'llama3', baseURL: 'http://localhost:11434' },
-                google: { model: 'gemini-2.5-pro' },
-                openai: { apiKey: '', model: ''},
-                claude: { apiKey: '', model: ''},
-                openrouter: { apiKey: '', model: ''},
-                groq: { apiKey: '', model: '' },
-                samba: { apiKey: '', model: '' },
-                cerberus: { apiKey: '', model: '' },
-            };
-        
-            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
+            const settings = makeSettings();
+            const newState = await runWorkflowIteration(BASE_STATE, settings, undefined, mockFetch);
             expect(fetchCalled).toBeTruthy();
-            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
+            expect(newState.state.steps.length).toBe(2);
+            expect(newState.runLog.length).toBe(1);
         });
 
-        it('should call the Groq provider correctly', async () => {
-            let fetchCalled = false;
-            const mockFetch = async (url: any, options: any) => {
-                fetchCalled = true;
-                expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
-                const body = JSON.parse(options.body);
-                expect(body.model).toBe('llama3-70b-8192');
-                expect(options.headers['Authorization']).toBe('Bearer groq-test-key');
+        it('should return an error state after two failures with log entry', async () => {
+            let attempts = 0;
+            const mockFetch = async () => {
+                attempts += 1;
+                throw new Error('Network down');
+            };
+
+            const settings = makeSettings();
+            const newState = await runWorkflowIteration(BASE_STATE, settings, undefined, mockFetch as any);
+            expect(attempts).toBe(2);
+            expect(newState.status).toBe('error');
+            expect(newState.state.notes.includes('Workflow error')).toBeTruthy();
+            expect(newState.runLog.length).toBe(1);
+        });
+
+        it('should handle the RAG flow and append results/notes', async () => {
+            const stateWithRagQuery: WorkflowState = {
+                ...BASE_STATE,
+                state: {
+                    ...BASE_STATE.state,
+                    artifacts: [{ key: 'rag_query', value: 'security protocol' }]
+                }
+            };
+            
+            const mockFetch = async () => ({
+                ok: true,
+                json: async () => ({
+                    response: JSON.stringify({
+                        ...stateWithRagQuery,
+                        state: { ...stateWithRagQuery.state, notes: 'Waiting for RAG results' }
+                    })
+                })
+            } as any);
+
+            const settings = makeSettings();
+            const ragContent = "Always use HTTPS for secure transport.";
+            const newState = await runWorkflowIteration(stateWithRagQuery, settings, ragContent, mockFetch);
+            
+            const ragQuery = newState.state.artifacts.find(a => a.key === 'rag_query');
+            expect(ragQuery).toBeUndefined();
+
+            const ragResults = newState.state.artifacts.find(a => a.key === 'rag_results');
+            expect(ragResults).toBeTruthy();
+            expect(ragResults?.value.includes('HTTPS')).toBeTruthy();
+            expect(newState.state.notes.includes('Search completed')).toBeTruthy();
+        });
+
+        it('should run internet search and preserve notes', async () => {
+            const stateWithInternetQuery: WorkflowState = {
+                ...BASE_STATE,
+                state: {
+                    ...BASE_STATE.state,
+                    notes: 'Original note',
+                    artifacts: [{ key: 'internet_query', value: 'llama3 news' }]
+                }
+            };
+
+            const mockFetch = async (url: any) => {
+                if (String(url).includes('/api/generate')) {
+                    return {
+                        ok: true,
+                        json: async () => ({
+                            response: JSON.stringify({
+                                ...stateWithInternetQuery,
+                                state: { ...stateWithInternetQuery.state }
+                            })
+                        })
+                    } as any;
+                }
 
                 return {
                     ok: true,
                     json: async () => ({
-                        choices: [{ message: { content: JSON.stringify(MOCK_LLM_RESPONSE) } }]
+                        RelatedTopics: [{ Text: 'LLAMA3 released' }]
                     })
                 } as any;
             };
 
-            const settings: LLMSettings = {
-                provider: 'groq',
-                groq: { apiKey: 'groq-test-key', model: 'llama3-70b-8192', baseURL: 'https://api.groq.com/openai/v1' },
-                google: { model: 'gemini-2.5-pro' },
-                claude: { apiKey: '', model: ''},
-                openai: { apiKey: '', model: ''},
-                openrouter: { apiKey: '', model: ''},
-                ollama: { model: ''},
-                samba: { apiKey: '', model: '' },
-                cerberus: { apiKey: '', model: '' },
-            };
+            const settings = makeSettings();
+            const newState = await runWorkflowIteration(stateWithInternetQuery, settings, undefined, mockFetch as any);
 
-            const newState = await runWorkflowIteration(MOCK_STATE, settings, undefined, mockFetch);
-            expect(fetchCalled).toBeTruthy();
-            expect(newState.state.notes).toBe(MOCK_LLM_RESPONSE.state.notes);
-        });
-
-        it('should handle the RAG flow correctly', async () => {
-            const stateWithRagQuery: WorkflowState = {
-                ...MOCK_STATE,
-                state: {
-                    ...MOCK_STATE.state,
-                    artifacts: [{ key: 'rag_query', value: 'search for protocol' }]
-                }
-            };
-            
-            // Mock LLM to return the state *with* the rag_query still in it
-             const mockLLMResponseWithRag: WorkflowState = {
-                ...stateWithRagQuery,
-                runLog: [{ iteration: 1, agent: 'Worker', summary: 'Querying knowledge base.' }],
-                state: { ...stateWithRagQuery.state, notes: 'Waiting for RAG results' }
-            };
-
-            const mockFetch = async () => ({
-                ok: true,
-                json: async () => ({
-                    choices: [{ message: { content: JSON.stringify(mockLLMResponseWithRag) } }]
-                })
-            } as any);
-
-
-            const settings: LLMSettings = {
-                provider: 'openai',
-                openai: { apiKey: 'test-key', model: 'gpt-4o', baseURL: 'https://api.openai.com/v1' },
-                google: { model: 'gemini-2.5-pro' },
-                claude: { apiKey: '', model: ''},
-                openrouter: { apiKey: '', model: ''},
-                ollama: { model: ''},
-                groq: { apiKey: '', model: '' },
-                samba: { apiKey: '', model: '' },
-                cerberus: { apiKey: '', model: '' },
-            };
-            
-            const ragContent = "The main security protocol is to always use HTTPS.";
-            const newState = await runWorkflowIteration(stateWithRagQuery, settings, ragContent, mockFetch);
-            
-            // Check that the rag_query artifact was removed
-            const ragQuery = newState.state.artifacts.find(a => a.key === 'rag_query');
-            expect(ragQuery).toBeUndefined();
-
-            // Check that the rag_results artifact was added
-            const ragResults = newState.state.artifacts.find(a => a.key === 'rag_results');
-            expect(ragResults).toBeTruthy();
-            expect(ragResults?.value.includes('security protocol')).toBeTruthy();
-            expect(newState.state.notes.includes("I have completed the requested search")).toBeTruthy();
+            const internetResults = newState.state.artifacts.find(a => a.key === 'internet_results');
+            expect(internetResults).toBeTruthy();
+            expect(internetResults?.value.includes('LLAMA3')).toBeTruthy();
+            expect(newState.state.notes.includes('Original note')).toBeTruthy();
         });
     });
 };
