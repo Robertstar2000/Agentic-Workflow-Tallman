@@ -39,7 +39,7 @@ const getSystemPrompt = (currentState: WorkflowState, ragContent?: string) => {
         currentState.state.initialPlan &&
         currentState.state.initialPlan.length > 0
         ? `
-**CONTEXT REMINDER:** To maintain focus on the long-term objective, here is the original goal and the initial plan you created. Review it before proceeding.
+**CONTEXT REMINDER:** To focus on the long-term objective, use the original goal and the initial plan. Review before proceeding.
 
 - **Original Goal:** ${currentState.goal}
 - **Initial Plan:**
@@ -58,87 +58,75 @@ ${ragContent ? '**User Knowledge Document:** A document has been uploaded. You c
     return `${contextReminder}
 You are an intelligent automation platform executing a complex, multi-step workflow.
 Your goal is to achieve the user's objective by breaking it down into steps and iterating until completion.
-You operate in a loop of three agents: Planner, Worker, and QA.
+You operate in a loop of three agents: Planner, Worker, and QA, with tools: RAG, internet search, and artifact writing. The execution order is Planner -> Worker -> QA -> Worker (next step) ... and the final Worker step ends the workflow with no QA afterward.
 ${ragInstruction}
 **Context Management Rules:**
 Your context window is limited. To ensure the workflow runs smoothly, you MUST adhere to the following rules for managing artifact size:
 - **Code Artifacts:** When generating code, limit snippets to a maximum of 300 lines per iteration. If a file needs to be larger, you MUST split it across iterations and let QA approve appending more in follow-on iterations. For larger structures, instruct the Planner to add new steps and use imports/includes to connect them.
 - **Text Artifacts:** If you are generating a large text document (e.g., a report, research notes), you MUST summarize it if the full text is not essential for the next immediate step. Store the full text in one artifact and create a separate artifact with a summary (e.g., 'report.md' and 'report_summary.md'). This helps keep the context for subsequent steps clean and focused.
 - **Focus:** For each turn, focus on the user's main goal, the current step in the plan, feedback from other agents (in 'notes'), and the most recent log entries.
-- **Verbosity:** Planner responses should be concise. Worker and QA responses should be verbose, explicitly describing actions taken and results produced so progress is observable in logs.
+- **Verbosity:** Planner responses should be concise. Worker and QA responses should be verbose.
 
-**ABOSOLUTE PROHIBITIONS - VIOLATION = IMMEDIATE FAILURE:**
+**ABSOLUTE PROHIBITIONS - VIOLATION = IMMEDIATE FAILURE:**
 - **NEVER EXECUTE STEPS BACKWARDS**: The workflow can ONLY move FORWARD through steps. You CANNOT return to a previous step number. Once a step is completed, it stays completed. The current step number must ALWAYS increase or stay the same.
 - **NEVER COMMUNICATE WITH EXTERNAL PARTIES**: You MUST NOT plan to contact, email, send quotes, or otherwise communicate with other parties, companies, or individuals outside of this system.
 
 **Workflow Execution Flow:**
 
 1.  **Planner:** Your first task is always to act as the Planner. Analyze the goal and the current state.
-        **Step 1 - CRITICAL:** Using the user's goal clarify, fill in unknowns with educated assumptions and then expand into a bullet list of requirements.
-    -   **Step 2 - CRITICAL:** If the 'steps' array is empty, this is the INITIAL PLANNING PHASE. You MUST create ALL steps RIGHT NOW in this single iteration. DO NOT create just one step. DO NOT plan to add more steps later. Create the ENTIRE plan NOW. After creating the plan, you are DONE with planning - move to the next agent (Worker).
-        
-        **MANDATORY PLAN STRUCTURE (You MUST create ALL these steps NOW):**
+        **Step 1 - CRITICAL:** Using the user's goal, clarify, fill in unknowns with educated assumptions, and expand into a bullet list of requirements.
+    -   **Step 2 - CRITICAL:** If the 'steps' array is empty, this is the INITIAL PLANNING PHASE. You MUST create ALL steps RIGHT NOW in this single iteration. DO NOT create just one step. 
+  
+       **MANDATORY PLAN STRUCTURE (You MUST create ALL these steps NOW):**
         - Step 1: "Clarify requirements, make assumptions, and write clear bulleted requirements specification"
         - Step 2: "Refine goal and generate all steps needed to achieve the goal"
-        - Step 3: "[Implement requirement: crisp description of first bullet sub requirement from step 1]"
-        - Step 4: "[Implement requirement: crisp description of second bullet sub requirement from step 1]" then continue with steps until all bullet requirements have their own step ... and so on ...
+        - Step 3 through step N-2: "[Implement requirement: crisp description of first bullet sub requirement from step 1]" continue with steps until all bullet requirements have their own step ... and so on ...
         - Step N-1: "Generate final result artifact (result.html/result.csv/result.md) from completed work"
         - Step N: "Summarize the final product from context and explain the result"
         
         **CRITICAL REQUIREMENTS:**
-        1. Create a MINIMUM of 5 steps and MAXIMUM of 15 steps
-        2. Populate BOTH 'steps' and 'initialPlan' arrays with the EXACT SAME complete list of ALL steps
-        3. Steps 3 through N-1 MUST include a CRISP description of the specific requirement being addressed (e.g., "Implement requirement: Create user authentication system", "Implement requirement: Build data visualization dashboard")
-        4. The FINAL step (Step N) MUST summarize the answer and generate the final result artifact
+        1. Create a MINIMUM of 5 steps and MAXIMUM of 20 steps.
+        2. Populate BOTH 'steps' and 'initialPlan' arrays with the EXACT SAME complete list of ALL steps.
+        3. Steps 3 through N-1 MUST include a DETAILED description of the specific requirement being addressed (e.g., "Implement requirement: Create user authentication system", "Implement requirement: Build data visualization dashboard").
+        4. The FINAL step (Step N) MUST summarize the answer in human readable text and generate the final result artifact.
         5. Set progress to "Planning complete. Ready to execute step 1."
-        6. Log "Planner: Created comprehensive plan with X steps"
-        7. After creating the plan, STOP planning and let the Worker agent take over
-        8. If the goal involves code, an application, an app, a program, a calculation, software, a script, or otherwise needs software code, you MUST choose Java for backend/logic and HTML for UI, and target a single entry file named "index.html" for the UI output. Do NOT choose any other languages.
+        6. Log "Planner: Created comprehensive plan with X steps".
+        7. After creating the plan, STOP planning and let the Worker agent take over.
+        8. If the goal involves code, an application, an app, a program, a calculation, software, a script, or otherwise needs software code, you MUST use TypeScript/JavaScript for logic and HTML for UI, and target a single entry file named "index.html" for the UI output.
         
         **WRONG (DO NOT DO THIS):** Creating only Step 1 and planning to add more later
-        **CORRECT (DO THIS):** Creating all 5-15 steps in the 'steps' array right now, then stopping
+        **CORRECT (DO THIS):** Creating all 5-20 steps in the 'steps' array right now, then stopping
         
     -   **IMPORTANT:** The 'initialPlan' field must NEVER be modified after creation.
     -   **Subsequent Runs:** Find the next incomplete step. Update 'progress' to "Working on step X..." where X is the 1-based index. Log your action.
     -   **Crucially, the 'initialPlan' field must NEVER be modified after it is first created.** It serves as a permanent record of the original strategy.
-2.  **Worker:** After the Planner, you act as the Worker. Execute the current step using the original goal, clarified goal (if available), and current plan step as context.
+2.  **Worker:** After the Planner, you act as the Worker. Execute the current step using the goal, requirements (if available), and current plan step description as context.
     -   **MANDATORY: Every Step Creates an Artifact.** EVERY step execution MUST produce at least one artifact. Name artifacts clearly: \`step_X_[description].[ext]\`.
     -   **Step 1 - Requirements:** Create artifact named \`Requirements.md\` with: bulleted list of requirements, assumptions, clarifications, success criteria. This will be shown under the Requirements heading.
-    -   **Step 2 - Plan:** Create artifact named \`Plan.md\` containing a numbered list of ALL steps with detailed descriptions for each step. Format:
-        1. Step Name - Description of what will be accomplished
-        2. Step Name - Description of what will be accomplished
-        This will display in the sidebar and be downloadable.
-    -   **Steps 3-X - Implementation:** Each step creates artifacts for accomplishing a requirement (e.g., \`step_3_database_schema.sql\`, \`step_4_api_endpoints.js\`, \`step_5_ui_component.tsx\`).
-    -   **Final Assembly (Step N-1):** You may loop as needed to gather content from all prior steps and concatenate into the final result artifact.
-    -   **Final Step - Result:** Create the final deliverable as \`result.html\` (for web apps), \`result.csv\` (for data), or \`result.md\` (for reports). This will be displayed in the UI as the main result.
-    -   **Final Step Completion:** On the FINAL step, if this is the fourth iteration of the final step, you MUST complete the work and create the final result artifact regardless of perfection. Do not continue iterating.
+    -   **Steps 2 through N-2 - Implementation:** Each step creates artifacts for accomplishing a requirement (e.g., \`step_3_database_schema.sql\`, \`step_4_api_endpoints.js\`, \`step_5_ui_component.tsx\`).
+    -   **Use tools as needed:** RAG on previously generated artifacts, research the internet, write artifacts.
+    -   **Final Assembly (Step N-1):** You may loop as needed to gather content from all prior steps and concatenate each loop result onto the final result artifact.
+    -   **Final Step - Result:** Create the final deliverable as \`result.html\` (for web apps), \`result.csv\` (for data), or \`result.md\` (for reports). This will be displayed in the UI as the main result. No QA review is performed after the final Worker step.
+    -   **Final Step Completion:** On the FINAL step you MUST complete the work and create the final result artifact. Iterate only once per step.
     -   **Reading Previous Work:** To access previous artifacts, create a \`rag_query\` artifact with your search query (e.g., {"key": "rag_query", "value": "requirements"}). The system will provide results in \`rag_results\` artifact in the next iteration.
     -   **Internet Access:** You do have internet access. You MUST attempt to search the web, fetch URLs, or reference external resources when you need additional information. The system will provide results in \`internet_results\` artifact in the next iteration.
-    -   **Code Generation:** Write in TypeScript/JavaScript with proper extensions.
-    -   **Web Design:** Include inline CSS in HTML files.
-    -   Update 'progress' field and log "Worker: Completed step X, created [artifact_name]".
-3.  **QA:** After the Worker, you act as the QA agent. Review work against the original goal and clarified goal.
-    -   **MANDATORY: Final Step Iteration Limit:** If this is the FINAL step and after 4 attempted iterations, you MUST approve the work and mark as complete. Do not request further changes.
-    -   **Step Failure Handling:** If a step fails to produce satisfactory results after 3 attempts, you MAY add new steps ONLY to try an alternate approach. Insert new steps after the failed step.
-    -   **If Not Complete:** Provide specific feedback in 'notes'. Set status to "running". Do NOT add steps unless a step has failed 3 times.
-    -   **If Complete:** If goal is fully achieved, perform final steps:
-        1.  **Categorize Result:** First, determine if the primary output is 'code' (e.g., a software project, scripts) or 'text' (e.g., a report, analysis, story). Set the \`resultType\` field in the root of the state object to either "code" or "text". This field is mandatory for a completed status.
-        2.  **Generate README:** Create a comprehensive \`README.md\` file as a new artifact. This file is the primary deliverable. Its content should be professionally formatted and inspired by high-quality open-source projects (like \`cline/cline\` on GitHub). It MUST include:
-            -   A clear title and a concise one-sentence summary of the project.
-            -   An "Overview" section explaining the project's purpose and key features.
-            -   A "Getting Started" or "Usage" section with instructions. If \`resultType\` is "code", this means installation (\`npm install\`) and execution (\`npm run dev\`) commands. If \`resultType\` is "text", this means explaining the findings or how to read the report.
-            -   A "Technical Details" or "Methodology" section if applicable, detailing architecture or dependencies.
-        3.  **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
-        4.  **Set Final Outputs:** Set the \`finalResultMarkdown\` field to the **exact same content** as the \`README.md\` artifact. Generate a brief, user-friendly summary of the project's outcome and put it in the \`finalResultSummary\` field. If the deliverable is software, code, tables, or calculations, this summary must describe in plain language what the code/data does and key outcomes (not just a terse code snippet).
-            -   **Crucial for Text Tasks:** If the user's goal was a question or analysis (e.g., "What is the capital of X?", "Summarize this report"), the summary MUST contain the *actual answer* or *key findings*, not just a statement that the task was completed (e.g., do NOT say "I found the answer", say "The answer is X").
-        5.  **MANDATORY: Set Status:** Finally, set the \`status\` to "completed".
-
-**Final Output Structure:**
-If the goal is to create a "project repository" or a runnable application, the final set of artifacts should represent a complete file structure. This includes source code files (e.g., \`index.ts\`, \`App.tsx\`), dependency files (\`package.json\`), build configuration (\`tsconfig.json\`, \`vite.config.ts\`), and public assets (\`index.html\`). The final consolidation step should ensure all these files are present and correctly structured.
+    -   **Code Generation:** Write in TypeScript/JavaScript with proper extensions. Include inline CSS in HTML files.
+    -   Update 'progress' field and log "Worker: Completed Agent [agent name]. Completed step X, created [artifact_name]. error[error message]" (omit error section if none).
+3.  **QA:** After each Worker step (except the final step), you act as the QA agent. Review work against the original goal and clarified goal.
+    -   **Final Step:** No QA review after the final Worker step; the Worker completes and closes the workflow.
+    -   **Generate RequiredFixes:** Generate a concise list of improvements formatted for the Worker's next iteration when needed.
+    -   **Step Failure Handling:** If a step fails to produce satisfactory results after 2 attempts, create a note artifact and explain. Set status to "running".
+    -   **If Step Complete:** Save Worker artifacts and move to the next step.
+    -   **If goal is fully achieved on the last step, perform final steps:**
+        1. **Categorize Result:** Determine if the primary output is 'code', 'text', or 'table'. Set the \`resultType\` field accordingly (mandatory for completion).
+        2. **Create README:** Create a comprehensive \`README.md\` artifact. It must include: title + one-sentence summary; Overview; Usage (if 'code', include install \`npm install\` and run \`npm run dev\`; if 'text', explain findings; if 'table', explain how to consume the .csv); Technical Details/Methodology if applicable.
+        3. **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
+        4. **Set Final Outputs:** Set \`finalResultMarkdown\` to exactly the README content. Generate a brief, user-friendly \`finalResultSummary\` describing what the code/data/text does and key outcomes; if it's a Q&A or analysis, include the actual answer or key findings.
+        5. **MANDATORY: Set Status:** Set \`status\` to "completed".
 
 **Current State:**
 You are on iteration ${currentState.currentIteration + 1} of ${currentState.maxIterations}.
-The current state of the workflow is provided below in JSON format. Note: for brevity, the run log may be truncated. Do not repeat it in your response.
+The current state of the workflow is provided below in JSON format. 
 
 \`\`\`json
 ${JSON.stringify(stateForPrompt, null, 2)}
@@ -194,7 +182,7 @@ const responseSchema = {
         },
         finalResultMarkdown: { type: Type.STRING },
         finalResultSummary: { type: Type.STRING },
-        resultType: { type: Type.STRING, description: "The type of result, either 'code' or 'text'. Should be set by the QA agent upon completion." }
+        resultType: { type: Type.STRING, description: "The type of result, either 'code', 'text', or 'table'. Should be set by the QA agent upon completion." }
     },
     required: ['goal', 'maxIterations', 'currentIteration', 'status', 'runLog', 'state', 'finalResultMarkdown', 'finalResultSummary']
 };
@@ -204,20 +192,164 @@ const _appendNote = (existing: string, addition: string) => {
     return `${existing} | ${addition}`;
 };
 
+const _enforceRunLogFormat = (entries: RunLogEntry[]): RunLogEntry[] => {
+    return entries.map(entry => {
+        if (!entry || typeof entry.summary !== 'string' || typeof entry.agent !== 'string') return entry;
+        const trimmedSummary = entry.summary.trim();
+        const prefix = `${entry.agent}:`;
+        if (trimmedSummary.toLowerCase().startsWith(prefix.toLowerCase())) {
+            return { ...entry, summary: trimmedSummary };
+        }
+        return { ...entry, summary: `${prefix} ${trimmedSummary}` };
+    });
+};
+
+const _autoAssembleReadme = (goal: string, artifacts: { key: string, value: string }[]): string => {
+    const ignoreKeys = ['rag_results', 'internet_results', 'notes', 'rag_query', 'internet_query'];
+    const filtered = artifacts.filter(a => {
+        const keyLower = (a.key || '').toLowerCase();
+        return !ignoreKeys.some(ignore => keyLower.includes(ignore)) && !/summary/i.test(keyLower);
+    });
+
+    const sections = filtered.map(a => {
+        const header = a.key;
+        const body = (a.value || '').trim();
+        if (!body) return '';
+        return `## ${header}\n${body}\n`;
+    }).filter(Boolean);
+
+    return `# Workflow Report\n\n**Goal:** ${goal}\n\n${sections.join('\n')}`;
+};
+
+const _enforceFinalStepRules = (state: WorkflowState): WorkflowState => {
+    const totalSteps = state.state.steps?.length || 0;
+    const stepNum = _detectStepNumber(state);
+    if (totalSteps === 0 || stepNum < totalSteps) {
+        return state;
+    }
+
+    const runLog = [...(state.runLog || [])];
+    if (runLog.length > 0) {
+        const last = runLog[runLog.length - 1];
+        if (last?.agent?.toLowerCase() === 'qa') {
+            runLog[runLog.length - 1] = {
+                ...last,
+                agent: 'Worker',
+                summary: `Worker (final step): ${last.summary}`
+            };
+            state.state.notes = _appendNote(state.state.notes, 'Final step: QA skipped; treated as Worker completion.');
+        }
+    }
+
+    return {
+        ...state,
+        runLog: _enforceRunLogFormat(runLog),
+        state: {
+            ...state.state,
+            notes: state.state.notes
+        }
+    };
+};
+
+const _validateArtifactsAndFinals = (previousState: WorkflowState, newState: WorkflowState): WorkflowState => {
+    const totalSteps = newState.state.steps?.length || 0;
+    const stepNum = _detectStepNumber(newState);
+    const prevCount = previousState.state.artifacts?.length || 0;
+    const newCount = newState.state.artifacts?.length || 0;
+    let status = newState.status;
+    let notes = newState.state.notes || '';
+    let runLog = [...newState.runLog];
+
+    const addQAWarning = (message: string) => {
+        notes = _appendNote(notes, message);
+        runLog.push({
+            iteration: previousState.currentIteration + 1,
+            agent: 'QA',
+            summary: `QA: ${message}`
+        });
+        status = 'running';
+    };
+
+    if (stepNum > 0 && stepNum < totalSteps) {
+        if (newCount <= prevCount) {
+            addQAWarning(`Step ${stepNum}: No new artifacts created; each step must produce at least one artifact.`);
+        }
+    }
+
+    if (totalSteps > 0 && stepNum === totalSteps - 1) {
+        const artifacts = newState.state.artifacts || [];
+        const hasREADME = artifacts.some(a => /readme\.md$/i.test(a.key));
+        const hasAssembly = artifacts.some(a =>
+            /result\.(html|md|csv)$/i.test(a.key) || /final/i.test(a.key) || /readme\.md$/i.test(a.key)
+        );
+        if (!hasAssembly || !hasREADME) {
+            const readme = _autoAssembleReadme(newState.goal, artifacts);
+            newState.state.artifacts.push({ key: 'README.md', value: readme });
+            newState.runLog.push({
+                iteration: previousState.currentIteration + 1,
+                agent: 'Worker',
+                summary: 'Worker: Auto-assembled README.md from prior artifacts (final assembly fallback).'
+            });
+            newState.state.notes = _appendNote(newState.state.notes, 'Auto-assembled README.md from prior artifacts for final assembly.');
+            addQAWarning(
+                `Step ${stepNum}: Final assembly missing. Perform RAG over all prior artifacts (ignore process notes), extract goal-relevant content, append human-readable paragraphs per step into README.md, and emit README.md/result.*.`
+            );
+        }
+    }
+
+    if (totalSteps > 0 && stepNum === totalSteps) {
+        const hasSummary = Boolean(newState.finalResultSummary && newState.finalResultSummary.trim().length > 0);
+        const hasMarkdown = Boolean(newState.finalResultMarkdown && newState.finalResultMarkdown.trim().length > 0);
+        const artifacts = newState.state.artifacts || [];
+        const hasSummaryArtifact = artifacts.some(a => /summary/i.test(a.key));
+        if (!hasSummary || !hasMarkdown || !hasSummaryArtifact) {
+            const readmeArtifact = artifacts.find(a => /readme\.md$/i.test(a.key));
+            if (readmeArtifact && readmeArtifact.value) {
+                const summaryText = readmeArtifact.value.slice(0, 1200);
+                newState.finalResultMarkdown = newState.finalResultMarkdown || readmeArtifact.value;
+                newState.finalResultSummary = newState.finalResultSummary || summaryText;
+                newState.state.artifacts.push({
+                    key: 'result_summary.md',
+                    value: newState.finalResultSummary
+                });
+                newState.runLog.push({
+                    iteration: previousState.currentIteration + 1,
+                    agent: 'Worker',
+                    summary: 'Worker: Auto-generated final summary from README.md.'
+                });
+                newState.state.notes = _appendNote(newState.state.notes, 'Auto-generated final summary from README.md.');
+            }
+            addQAWarning(
+                `Step ${stepNum}: Final summary missing. Summarize README.md into finalResultSummary and finalResultMarkdown, and create a summary artifact (e.g., result_summary.md) for UI display.`
+            );
+        }
+    }
+
+    return {
+        ...newState,
+        status,
+        runLog,
+        state: {
+            ...newState.state,
+            notes
+        }
+    };
+};
+
 const _normalizeWorkflowState = (raw: any, fallbackGoal: string): WorkflowState => {
     const allowedStatuses: WorkflowStatus[] = ['running', 'completed', 'needs_clarification', 'error'];
     const safeStatus: WorkflowStatus = allowedStatuses.includes(raw?.status) ? raw.status : 'running';
 
-    const safeResultType = raw?.resultType === 'code' || raw?.resultType === 'text' ? raw.resultType : undefined;
+    const safeResultType = raw?.resultType === 'code' || raw?.resultType === 'text' || raw?.resultType === 'table' ? raw.resultType : undefined;
 
     const safeState: WorkflowState = {
         goal: typeof raw?.goal === 'string' ? raw.goal : fallbackGoal,
         maxIterations: Number.isInteger(raw?.maxIterations) ? raw.maxIterations : 10,
         currentIteration: Number.isInteger(raw?.currentIteration) ? raw.currentIteration : 0,
         status: safeStatus,
-        runLog: Array.isArray(raw?.runLog) ? raw.runLog.filter((e: any) =>
+        runLog: _enforceRunLogFormat(Array.isArray(raw?.runLog) ? raw.runLog.filter((e: any) =>
             e && Number.isInteger(e.iteration) && typeof e.agent === 'string' && typeof e.summary === 'string'
-        ) : [],
+        ) : []),
         state: {
             goal: typeof raw?.state?.goal === 'string' ? raw.state.goal : fallbackGoal,
             steps: Array.isArray(raw?.state?.steps) ? raw.state.steps : [],
@@ -391,10 +523,11 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
     if (!newState) {
         const failureMessage = `Workflow error: ${lastError?.message || 'Unknown error'}`;
         const failureLog: RunLogEntry = { iteration: currentState.currentIteration + 1, agent: 'QA', summary: failureMessage };
+        const runLog = _enforceRunLogFormat([...currentState.runLog, failureLog]);
         return {
             ...currentState,
             status: 'error',
-            runLog: [...currentState.runLog, failureLog],
+            runLog,
             state: {
                 ...currentState.state,
                 notes: _appendNote(currentState.state.notes, failureMessage),
@@ -454,7 +587,11 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
         }
     }
 
-    return newState;
+    newState = _validateArtifactsAndFinals(currentState, newState);
+    newState.runLog = _enforceRunLogFormat(newState.runLog);
+
+    // Enforce final-step rule: no QA after the last Worker step.
+    return _enforceFinalStepRules(newState);
 };
 
 /**
