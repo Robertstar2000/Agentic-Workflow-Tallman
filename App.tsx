@@ -252,8 +252,8 @@ const App: React.FC = () => {
                     break;
                 }
 
-                const lastAgent = currentState.runLog[currentState.runLog.length - 1]?.agent;
-                if (lastAgent === 'QA') {
+                const lastAgentQA = currentState.runLog[currentState.runLog.length - 1]?.agent;
+                if (lastAgentQA === 'QA') {
                     qaIterations++;
                     const currentStep = deriveStepNum(currentState, highestStepReached);
                     const isFinalStep = currentState.state.steps.length > 0 && currentStep >= currentState.state.steps.length;
