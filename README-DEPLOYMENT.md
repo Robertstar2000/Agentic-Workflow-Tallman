@@ -1,584 +1,195 @@
-#Requires -RunAsAdministrator
-<#
-.SYNOPSIS
-    Complete automated deployment pipeline for Tallman-SuperAgent application
-.DESCRIPTION
-    Deploys React frontend to IIS, sets up Node.js backend services, configures SSL, and manages Windows services
-.PARAMETER Action
-    deploy, rollback, setup, health-check, ssl-setup, uninstall
-.EXAMPLE
-    .\deploy-tallman-chat.ps1 -Action setup
-    .\deploy-tallman-chat.ps1 -Action deploy
-#>
+# Tallman Super Agent - Self-Contained Docker Deployment
 
-param(
-    [Parameter(Mandatory=$false)]
-    [ValidateSet('setup','deploy','rollback','health-check','ssl-setup','uninstall')]
-    [string]$Action = 'deploy',
-    
-    [string]$Domain = 'SuperAgent.tallman.com',
-    [string]$Email = 'admin@tallman.com',
-    [string]$DeploymentPath = 'C:\inetpub\wwwroot\tallman-chat',
-    [string]$ServicePath = 'C:\Services\TallmanSuperAgent',
-    [string]$BackupPath = 'C:\Backups\TallmanSuperAgent',
-    [string]$BuildPath = '.',
-    [string]$RollbackVersion = ''
-)
+This application is designed to run completely self-contained in Docker containers without requiring any external IDE, development environment, or additional dependencies.
 
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
+## 🚀 Quick Start
 
-# ============================================================================
-# CONFIGURATION
-# ============================================================================
+### Prerequisites
+- Docker (version 20.10 or later)
+- docker-compose (version 1.29 or later)
+- At least 4GB RAM available
+- Ports 3250 and 3251 available on the host
 
-$Config = @{
-    SiteName = 'TallmanSuperAgent'
-    MainServiceName = 'TallmanSuperAgentMain'
-    LDAPServiceName = 'TallmanSuperAgentDAP'
-    OllamaServiceName = 'Ollama'
-    MainPort = 3260
-    BackendPort = 3260
-    LDAPPort = 3260
-    OllamaPort = 11434
-    NodePath = 'C:\Program Files\nodejs\node.exe'
-    NSSMPath = 'C:\ProgramData\chocolatey\bin\nssm.exe'
-}
+### One-Command Deployment
 
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
+```bash
+# Clone or navigate to the project directory
+cd Tallman-Super-Agent
 
-function Write-Step {
-    param([string]$Message, [string]$Color = 'Cyan')
-    Write-Host "`n==> $Message" -ForegroundColor $Color
-}
+# Start the application (Linux/Mac)
+./start.sh
 
-function Write-Success {
-    param([string]$Message)
-    Write-Host "✓ $Message" -ForegroundColor Green
-}
+# Or manually with docker-compose
+docker-compose up --build -d
+```
 
-function Write-Error-Custom {
-    param([string]$Message)
-    Write-Host "✗ $Message" -ForegroundColor Red
-}
+## 🏗️ Architecture
 
-function Test-Administrator {
-    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
+The application runs in two self-contained Docker containers:
 
-function Install-Prerequisites {
-    Write-Step "Installing Prerequisites"
-    
-    # Install Chocolatey
-    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
-        Write-Host "Installing Chocolatey..."
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-    }
-    
-    # Install required software
-    $packages = @('nodejs-lts', 'git', 'urlrewrite', 'nssm')
-    foreach ($package in $packages) {
-        if (-not (choco list --local-only | Select-String $package)) {
-            Write-Host "Installing $package..."
-            choco install $package -y --no-progress
-        }
-    }
-    
-    # Enable IIS features
-    $features = @(
-        'IIS-WebServerRole',
-        'IIS-WebServer',
-        'IIS-CommonHttpFeatures',
-        'IIS-HttpErrors',
-        'IIS-ApplicationInit',
-        'IIS-HealthAndDiagnostics',
-        'IIS-HttpLogging',
-        'IIS-Security',
-        'IIS-RequestFiltering',
-        'IIS-Performance',
-        'IIS-HttpCompressionStatic',
-        'IIS-WebServerManagementTools',
-        'IIS-ManagementConsole'
-    )
-    
-    foreach ($feature in $features) {
-        Enable-WindowsOptionalFeature -Online -FeatureName $feature -NoRestart -ErrorAction SilentlyContinue | Out-Null
-    }
-    
-    Write-Success "Prerequisites installed"
-}
+### Frontend Container
+- **Base**: nginx:alpine
+- **Port**: 3250 (external) → 80 (internal)
+- **Features**:
+  - Serves React application
+  - Health checks included
+  - Non-root user for security
+  - Automatic restarts on failure
 
-# ============================================================================
-# BACKUP FUNCTIONS
-# ============================================================================
+### Backend Container
+- **Base**: node:18
+- **Port**: 3251 (external) → 3231 (internal)
+- **Features**:
+  - Node.js API server
+  - SQLite database (file-based, no external DB required)
+  - Gemini AI integration
+  - LocalAI/Granite fallback
+  - Health checks included
+  - Non-root user for security
+  - Automatic restarts on failure
 
-function New-Backup {
-    Write-Step "Creating Backup"
-    
-    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $backupFolder = Join-Path $BackupPath $timestamp
-    
-    if (Test-Path $DeploymentPath) {
-        New-Item -ItemType Directory -Path $backupFolder -Force | Out-Null
-        Copy-Item -Path "$DeploymentPath\*" -Destination $backupFolder -Recurse -Force
-        Write-Success "Backup created: $backupFolder"
-        return $timestamp
-    }
-    return $null
-}
+## 📋 Environment Configuration
 
-function Restore-Backup {
-    param([string]$Version)
-    
-    Write-Step "Restoring Backup: $Version"
-    
-    $backupFolder = Join-Path $BackupPath $Version
-    if (-not (Test-Path $backupFolder)) {
-        throw "Backup version $Version not found"
-    }
-    
-    Stop-Services
-    Remove-Item -Path "$DeploymentPath\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path "$backupFolder\*" -Destination $DeploymentPath -Recurse -Force
-    Start-Services
-    
-    Write-Success "Backup restored successfully"
-}
+All configuration is contained in `.env.docker`:
 
-# ============================================================================
-# SERVICE MANAGEMENT
-# ============================================================================
+```env
+# Gemini AI Configuration
+GEMINI_API_KEY=your_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
 
-function Stop-Services {
-    Write-Step "Stopping Services"
-    
-    $services = @($Config.MainServiceName, $Config.LDAPServiceName)
-    foreach ($serviceName in $services) {
-        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-        if ($service -and $service.Status -eq 'Running') {
-            Stop-Service -Name $serviceName -Force
-            Write-Success "Stopped $serviceName"
-        }
-    }
-}
+# Granite Fallback (LocalAI)
+GRANITE_API_URL=http://host.docker.internal:12434/v1/chat/completions
 
-function Start-Services {
-    Write-Step "Starting Services"
-    
-    $services = @($Config.MainServiceName, $Config.LDAPServiceName)
-    foreach ($serviceName in $services) {
-        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-        if ($service) {
-            Start-Service -Name $serviceName
-            Write-Success "Started $serviceName"
-        }
-    }
-}
+# Application Settings
+PORT=3231
+JWT_SECRET=your_secure_jwt_secret
 
-function Install-WindowsServices {
-    Write-Step "Installing Windows Services"
-    
-    # Create service directory and logs
-    New-Item -ItemType Directory -Path $ServicePath -Force | Out-Null
-    New-Item -ItemType Directory -Path "$ServicePath\logs" -Force | Out-Null
-    
-    # Main Agent Service
-    Write-Host "Setting up $($Config.MainServiceName)..."
-    & $Config.NSSMPath remove $Config.MainServiceName confirm 2>$null
-    & $Config.NSSMPath install $Config.MainServiceName $Config.NodePath "$ServicePath\production-server.js"
-    & $Config.NSSMPath set $Config.MainServiceName AppDirectory $ServicePath
-    & $Config.NSSMPath set $Config.MainServiceName DisplayName "Tallman Super Agent Service"
-    & $Config.NSSMPath set $Config.MainServiceName Description "Main API service for Tallman Chat"
-    & $Config.NSSMPath set $Config.MainServiceName Start SERVICE_AUTO_START
-    & $Config.NSSMPath set $Config.MainServiceName AppStdout "$ServicePath\logs\main-service.log"
-    & $Config.NSSMPath set $Config.MainServiceName AppStderr "$ServicePath\logs\main-error.log"
-    & $Config.NSSMPath set $Config.MainServiceName AppRotateFiles 1
-    & $Config.NSSMPath set $Config.MainServiceName AppRotateBytes 1048576
-    
-    # LDAP Auth Service
-    Write-Host "Setting up $($Config.LDAPServiceName)..."
-    & $Config.NSSMPath remove $Config.LDAPServiceName confirm 2>$null
-    & $Config.NSSMPath install $Config.LDAPServiceName $Config.NodePath "$ServicePath\ldap-auth.js"
-    & $Config.NSSMPath set $Config.LDAPServiceName AppDirectory $ServicePath
-    & $Config.NSSMPath set $Config.LDAPServiceName DisplayName "Tallman Super Agent LDAP Service"
-    & $Config.NSSMPath set $Config.LDAPServiceName Description "LDAP authentication for Tallman Super Agent"
-    & $Config.NSSMPath set $Config.LDAPServiceName Start SERVICE_AUTO_START
-    & $Config.NSSMPath set $Config.LDAPServiceName AppStdout "$ServicePath\logs\ldap-service.log"
-    & $Config.NSSMPath set $Config.LDAPServiceName AppStderr "$ServicePath\logs\ldap-error.log"
-    & $Config.NSSMPath set $Config.LDAPServiceName AppRotateFiles 1
-    & $Config.NSSMPath set $Config.LDAPServiceName AppRotateBytes 1048576
-    
-    # Install Ollama if not present
-    if (-not (Get-Service -Name $Config.OllamaServiceName -ErrorAction SilentlyContinue)) {
-        Write-Host "Installing Ollama..."
-        $ollamaUrl = "https://ollama.ai/download/ollama-windows-amd64.exe"
-        $ollamaInstaller = "$env:TEMP\ollama-installer.exe"
-        Invoke-WebRequest -Uri $ollamaUrl -OutFile $ollamaInstaller -UseBasicParsing
-        Start-Process -FilePath $ollamaInstaller -ArgumentList "/S" -Wait
-        Remove-Item $ollamaInstaller -Force
-    }
-    
-    Write-Success "Windows services installed"
-}
+# Database (SQLite - no external setup required)
+# Database file is created automatically in container
+```
 
-function Remove-WindowsServices {
-    Write-Step "Removing Windows Services"
-    
-    $services = @($Config.MainServiceName, $Config.LDAPServiceName)
-    foreach ($serviceName in $services) {
-        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-        if ($service) {
-            Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
-            & $Config.NSSMPath remove $serviceName confirm
-            Write-Success "Removed $serviceName"
-        }
-    }
-}
+## 🔧 Manual Operations
 
-# ============================================================================
-# IIS CONFIGURATION
-# ============================================================================
+### Start Services
+```bash
+docker-compose up --build -d
+```
 
-function Install-IISConfiguration {
-    Write-Step "Configuring IIS"
-    
-    Import-Module WebAdministration -ErrorAction SilentlyContinue
-    
-    # Create deployment directory
-    New-Item -ItemType Directory -Path $DeploymentPath -Force | Out-Null
-    
-    # Remove existing site
-    if (Get-Website -Name $Config.SiteName -ErrorAction SilentlyContinue) {
-        Remove-Website -Name $Config.SiteName
-    }
-    
-    # Create website
-    New-Website -Name $Config.SiteName -Port 80 -PhysicalPath $DeploymentPath -Force
-    
-    # Create web.config
-    $webConfig = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<configuration>
-    <system.webServer>
-        <rewrite>
-            <rules>
-                <rule name="API Proxy" stopProcessing="true">
-                    <match url="^api/(.*)" />
-                    <action type="Rewrite" url="http://localhost:$($Config.MainPort)/api/{R:1}" />
-                </rule>
-                <rule name="LDAP Proxy" stopProcessing="true">
-                    <match url="^auth/(.*)" />
-                    <action type="Rewrite" url="http://localhost:$($Config.LDAPPort)/auth/{R:1}" />
-                </rule>
-                <rule name="SPA Fallback" stopProcessing="true">
-                    <match url=".*" />
-                    <conditions logicalGrouping="MatchAll">
-                        <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-                        <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-                    </conditions>
-                    <action type="Rewrite" url="/index.html" />
-                </rule>
-            </rules>
-        </rewrite>
-        <staticContent>
-            <mimeMap fileExtension=".json" mimeType="application/json" />
-            <mimeMap fileExtension=".woff2" mimeType="font/woff2" />
-        </staticContent>
-        <httpProtocol>
-            <customHeaders>
-                <add name="X-Frame-Options" value="DENY" />
-                <add name="X-Content-Type-Options" value="nosniff" />
-                <add name="Referrer-Policy" value="strict-origin-when-cross-origin" />
-                <add name="Strict-Transport-Security" value="max-age=31536000; includeSubDomains" />
-            </customHeaders>
-        </httpProtocol>
-        <httpCompression>
-            <dynamicTypes>
-                <add mimeType="application/json" enabled="true" />
-            </dynamicTypes>
-        </httpCompression>
-    </system.webServer>
-</configuration>
-"@
-    
-    $webConfig | Out-File -FilePath "$DeploymentPath\web.config" -Encoding UTF8 -Force
-    
-    Write-Success "IIS configured"
-}
+### Check Status
+```bash
+docker-compose ps
+```
 
-# ============================================================================
-# SSL CONFIGURATION
-# ============================================================================
+### View Logs
+```bash
+# All services
+docker-compose logs -f
 
-function Install-SSL {
-    Write-Step "Setting up SSL Certificate"
-    
-    # Install Certbot
-    if (-not (Get-Command certbot -ErrorAction SilentlyContinue)) {
-        choco install certbot -y --no-progress
-    }
-    
-    # Stop IIS temporarily
-    Stop-Service W3SVC
-    
-    try {
-        # Request certificate
-        certbot certonly --standalone --non-interactive --agree-tos --email $Email -d $Domain
-        
-        # Import certificate to IIS
-        $certPath = "C:\Certbot\live\$Domain"
-        if (Test-Path "$certPath\fullchain.pem") {
-            # Convert PEM to PFX
-            $pfxPath = "$certPath\certificate.pfx"
-            $pemCert = Get-Content "$certPath\fullchain.pem" -Raw
-            $pemKey = Get-Content "$certPath\privkey.pem" -Raw
-            
-            # Import to certificate store
-            $cert = Import-Certificate -FilePath "$certPath\fullchain.pem" -CertStoreLocation Cert:\LocalMachine\My
-            
-            # Bind to IIS
-            Import-Module WebAdministration
-            if (-not (Get-WebBinding -Name $Config.SiteName -Protocol https -ErrorAction SilentlyContinue)) {
-                New-WebBinding -Name $Config.SiteName -Protocol https -Port 443 -IPAddress "*"
-            }
-            
-            $binding = Get-WebBinding -Name $Config.SiteName -Protocol https
-            $binding.AddSslCertificate($cert.Thumbprint, "my")
-            
-            Write-Success "SSL certificate installed"
-        }
-    }
-    finally {
-        Start-Service W3SVC
-    }
-    
-    # Setup auto-renewal
-    $taskAction = New-ScheduledTaskAction -Execute "certbot" -Argument "renew --quiet --post-hook `"iisreset`""
-    $taskTrigger = New-ScheduledTaskTrigger -Daily -At "2:00AM"
-    $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-    
-    Unregister-ScheduledTask -TaskName "CertbotRenewal" -Confirm:$false -ErrorAction SilentlyContinue
-    Register-ScheduledTask -TaskName "CertbotRenewal" -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -User "SYSTEM" -RunLevel Highest
-    
-    Write-Success "SSL auto-renewal configured"
-}
+# Specific service
+docker-compose logs -f backend
+docker-compose logs -f frontend
+```
 
-# ============================================================================
-# FIREWALL CONFIGURATION
-# ============================================================================
+### Stop Services
+```bash
+docker-compose down
+```
 
-function Install-FirewallRules {
-    Write-Step "Configuring Firewall"
-    
-    $rules = @(
-        @{Name="Tallman Chat HTTP"; Port=80},
-        @{Name="Tallman Chat HTTPS"; Port=443}
-    )
-    
-    foreach ($rule in $rules) {
-        Remove-NetFirewallRule -DisplayName $rule.Name -ErrorAction SilentlyContinue
-        New-NetFirewallRule -DisplayName $rule.Name -Direction Inbound -Protocol TCP -LocalPort $rule.Port -Action Allow | Out-Null
-        Write-Success "Firewall rule: $($rule.Name)"
-    }
-}
+### Health Checks
+```bash
+# Backend health
+curl http://localhost:3251/api/health
 
-# ============================================================================
-# DEPLOYMENT
-# ============================================================================
+# Frontend availability
+curl http://localhost:3250
+```
 
-function Deploy-Application {
-    Write-Step "Deploying Application"
-    
-    # Create backup
-    $backupVersion = New-Backup
-    
-    # Stop services
-    Stop-Services
-    
-    # Find and extract build
-    $zipFile = Get-ChildItem -Path $BuildPath -Filter "tallman-chat-*.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
-    
-    if (-not $zipFile) {
-        # Build locally if no zip found
-        Write-Host "No build package found, building locally..."
-        Push-Location $BuildPath
-        npm install
-        npm run build
-        Pop-Location
-        
-        # Copy build files
-        if (Test-Path "$BuildPath\dist") {
-            Copy-Item -Path "$BuildPath\dist\*" -Destination $DeploymentPath -Recurse -Force
-        }
-    }
-    else {
-        # Extract zip
-        Expand-Archive -Path $zipFile.FullName -DestinationPath $DeploymentPath -Force
-    }
-    
-    # Copy server files
-    if (Test-Path "$BuildPath\server") {
-        Copy-Item -Path "$BuildPath\server\*" -Destination $ServicePath -Recurse -Force
-    }
-    
-    # Create environment file
-    $envContent = @"
-NODE_ENV=production
-PORT=$($Config.MainPort)
-LDAP_PORT=$($Config.LDAPPort)
-OLLAMA_URL=http://localhost:$($Config.OllamaPort)
-LOG_LEVEL=info
-"@
-    
-    $envContent | Out-File -FilePath "$ServicePath\.env" -Encoding UTF8 -Force
-    
-    # Install dependencies
-    if (Test-Path "$ServicePath\package.json") {
-        Push-Location $ServicePath
-        npm install --production
-        Pop-Location
-    }
-    
-    # Start services
-    Start-Services
-    
-    Write-Success "Application deployed"
-}
+## 🔒 Security Features
 
-# ============================================================================
-# HEALTH CHECK
-# ============================================================================
+- **Non-root containers**: Both frontend and backend run as non-privileged users
+- **Health checks**: Automatic monitoring and restart on failures
+- **Environment isolation**: All secrets stored in environment variables
+- **Minimal attack surface**: Alpine Linux base images
 
-function Test-Health {
-    Write-Step "Performing Health Checks"
-    
-    $endpoints = @(
-        @{Url="http://localhost:$($Config.MainPort)/api/health"; Name="Main API"},
-        @{Url="http://localhost:$($Config.LDAPPort)/auth/health"; Name="LDAP Service"},
-        @{Url="http://localhost"; Name="IIS Frontend"}
-    )
-    
-    $allHealthy = $true
-    
-    foreach ($endpoint in $endpoints) {
-        try {
-            $response = Invoke-WebRequest -Uri $endpoint.Url -TimeoutSec 10 -UseBasicParsing
-            if ($response.StatusCode -eq 200) {
-                Write-Success "$($endpoint.Name) - OK"
-            }
-            else {
-                Write-Error-Custom "$($endpoint.Name) - Status: $($response.StatusCode)"
-                $allHealthy = $false
-            }
-        }
-        catch {
-            Write-Error-Custom "$($endpoint.Name) - Error: $($_.Exception.Message)"
-            $allHealthy = $false
-        }
-    }
-    
-    # Check services
-    $services = @($Config.MainServiceName, $Config.LDAPServiceName)
-    foreach ($serviceName in $services) {
-        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
-        if ($service -and $service.Status -eq 'Running') {
-            Write-Success "Service $serviceName - Running"
-        }
-        else {
-            Write-Error-Custom "Service $serviceName - Not running"
-            $allHealthy = $false
-        }
-    }
-    
-    return $allHealthy
-}
+## 📊 Monitoring
 
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
+### Container Health
+```bash
+docker stats
+```
 
-function Main {
-    if (-not (Test-Administrator)) {
-        throw "This script must be run as Administrator"
-    }
-    
-    Write-Host @"
-╔═══════════════════════════════════════════════════════════╗
-║     Tallman Chat Automated Deployment Pipeline           ║
-║     Action: $($Action.PadRight(47))║
-╚═══════════════════════════════════════════════════════════╝
-"@ -ForegroundColor Cyan
-    
-    try {
-        switch ($Action) {
-            'setup' {
-                Install-Prerequisites
-                Install-IISConfiguration
-                Install-WindowsServices
-                Install-FirewallRules
-                Write-Host "`n✓ Setup completed successfully!" -ForegroundColor Green
-            }
-            
-            'deploy' {
-                Deploy-Application
-                Test-Health
-                Write-Host "`n✓ Deployment completed successfully!" -ForegroundColor Green
-            }
-            
-            'rollback' {
-                if (-not $RollbackVersion) {
-                    $backups = Get-ChildItem -Path $BackupPath -Directory | Sort-Object Name -Descending
-                    if ($backups) {
-                        Write-Host "`nAvailable backups:"
-                        $backups | ForEach-Object { Write-Host "  - $($_.Name)" }
-                        $RollbackVersion = Read-Host "`nEnter backup version to restore"
-                    }
-                    else {
-                        throw "No backups found"
-                    }
-                }
-                Restore-Backup -Version $RollbackVersion
-                Write-Host "`n✓ Rollback completed successfully!" -ForegroundColor Green
-            }
-            
-            'health-check' {
-                $healthy = Test-Health
-                if ($healthy) {
-                    Write-Host "`n✓ All systems healthy!" -ForegroundColor Green
-                }
-                else {
-                    Write-Host "`n✗ Some systems are unhealthy" -ForegroundColor Red
-                    exit 1
-                }
-            }
-            
-            'ssl-setup' {
-                Install-SSL
-                Write-Host "`n✓ SSL setup completed successfully!" -ForegroundColor Green
-            }
-            
-            'uninstall' {
-                Stop-Services
-                Remove-WindowsServices
-                if (Get-Website -Name $Config.SiteName -ErrorAction SilentlyContinue) {
-                    Remove-Website -Name $Config.SiteName
-                }
-                Write-Host "`n✓ Uninstall completed successfully!" -ForegroundColor Green
-            }
-        }
-    }
-    catch {
-        Write-Host "`n✗ Error: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
-    }
-}
+### Application Logs
+```bash
+# Real-time logs
+docker-compose logs -f
 
-# Execute
-Main
+# Last 100 lines
+docker-compose logs --tail=100
+```
+
+## 🚨 Troubleshooting
+
+### Backend Won't Start
+```bash
+# Check backend logs
+docker-compose logs backend
+
+# Check health endpoint
+curl http://localhost:3251/api/health
+```
+
+### Frontend Not Loading
+```bash
+# Check frontend logs
+docker-compose logs frontend
+
+# Check if port 3250 is available
+netstat -an | find "3250"
+```
+
+### AI Services Failing
+- Ensure `.env.docker` has valid `GEMINI_API_KEY`
+- Check if LocalAI container is running on port 12434
+- Verify network connectivity between containers
+
+### Port Conflicts
+- Change ports in `docker-compose.yml` if 3250/3251 are in use
+- Update any hardcoded URLs in the application accordingly
+
+## 🔄 Updates
+
+To update the application:
+```bash
+# Pull latest changes
+git pull
+
+# Rebuild and restart
+docker-compose down
+docker-compose up --build -d
+```
+
+## 🗂️ Self-Contained Features
+
+✅ **No external dependencies**: Everything runs in containers
+✅ **Database included**: SQLite database created automatically
+✅ **AI services configured**: Gemini primary, Granite fallback
+✅ **Health monitoring**: Automatic restarts and health checks
+✅ **Security hardened**: Non-root users, minimal permissions
+✅ **Production ready**: Restart policies, logging, monitoring
+
+## 🌐 Access Points
+
+- **Web Application**: http://localhost:3250
+- **API Documentation**: http://localhost:3251/api/health
+- **Backend Health**: http://localhost:3251/api/health
+
+## 📞 Support
+
+The application is designed to be completely self-contained. If issues persist:
+
+1. Check logs: `docker-compose logs -f`
+2. Verify environment: `cat .env.docker`
+3. Check container status: `docker-compose ps`
+4. Restart services: `docker-compose restart`
+
+No IDE or development environment required - everything runs in Docker!

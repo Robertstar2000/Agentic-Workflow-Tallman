@@ -17,8 +17,9 @@ import { OLLAMA_CONFIG } from './services/ollamaService';
 
 
 const DEFAULT_SETTINGS: LLMSettings = {
-    provider: 'ollama',
-    ollama: { model: OLLAMA_CONFIG.model, baseURL: OLLAMA_CONFIG.host },
+    provider: 'gemini',
+    gemini: { model: 'gemini-2.5-flash', apiKey: '' },
+    ollama: { model: 'llama3.3:latest', baseURL: 'http://10.10.20.24:11434' },
 };
 
 /**
@@ -39,37 +40,32 @@ const App: React.FC = () => {
     const [guidanceMode, setGuidanceMode] = useState<'auto' | 'human'>('auto');
     const [isAwaitingApproval, setIsAwaitingApproval] = useState(false);
     const [serviceStatus, setServiceStatus] = useState({
-        backend: 'checking',
-        ollama: 'checking',
-        ldap: 'checking'
+        backend: 'checking'
     });
     const [goalFileArtifacts, setGoalFileArtifacts] = useState<Artifact[]>([]);
     const [goalImageArtifacts, setGoalImageArtifacts] = useState<Artifact[]>([]);
+    const [ragContentProvided, setRagContentProvided] = useState(false);
 
     const checkServices = async () => {
         // Check backend
         try {
-            const backendResponse = await fetch('http://localhost:3560/api/health');
+            const backendResponse = await fetch('http://localhost:3251/api/health');
             setServiceStatus(prev => ({ ...prev, backend: backendResponse.ok ? 'online' : 'offline' }));
         } catch {
             setServiceStatus(prev => ({ ...prev, backend: 'offline' }));
         }
 
-        // Check Ollama
+        // Check Ollama - commented out as not using Ollama
+        /*
         try {
             const ollamaResponse = await fetch('http://10.10.20.24:11434/api/tags');
             setServiceStatus(prev => ({ ...prev, ollama: ollamaResponse.ok ? 'online' : 'offline' }));
         } catch {
             setServiceStatus(prev => ({ ...prev, ollama: 'offline' }));
         }
+        */
 
-        // Check LDAP
-        try {
-            const ldapResponse = await fetch('http://localhost:3100/api/health');
-            setServiceStatus(prev => ({ ...prev, ldap: ldapResponse.ok ? 'online' : 'offline' }));
-        } catch {
-            setServiceStatus(prev => ({ ...prev, ldap: 'offline' }));
-        }
+        // LDAP removed
     };
 
     useEffect(() => {
@@ -78,11 +74,29 @@ const App: React.FC = () => {
                 const savedSettings = localStorage.getItem('ai-workflow-settings');
                 if (savedSettings) {
                     const parsedSettings = JSON.parse(savedSettings) as LLMSettings;
-                    // Merge with defaults to ensure all keys are present
-                    setSettings(prev => ({...prev, ...parsedSettings}));
+                    // Validate and sanitize loaded settings
+                    const validProviders: Array<'ollama' | 'gemini'> = ['ollama', 'gemini'];
+
+                    // Check if provider is invalid (like 'google') and clear corrupted settings
+                    if (!validProviders.includes(parsedSettings.provider)) {
+                        console.warn(`Invalid provider '${parsedSettings.provider}' found in localStorage. Clearing corrupted settings.`);
+                        localStorage.removeItem('ai-workflow-settings');
+                        setSettings(DEFAULT_SETTINGS);
+                        return;
+                    }
+
+                    const sanitizedSettings: LLMSettings = {
+                        provider: parsedSettings.provider,
+                        gemini: parsedSettings.gemini || DEFAULT_SETTINGS.gemini,
+                        ollama: parsedSettings.ollama || DEFAULT_SETTINGS.ollama,
+                    };
+                    setSettings(sanitizedSettings);
                 }
             } catch (e) {
                 console.error("Failed to parse or decrypt settings from localStorage", e);
+                // Clear corrupted localStorage on parse errors
+                localStorage.removeItem('ai-workflow-settings');
+                setSettings(DEFAULT_SETTINGS);
             }
 
             // Check services after settings are loaded
@@ -470,23 +484,11 @@ const App: React.FC = () => {
                     />
 
                     {/* Service Status Banners */}
-                    {(serviceStatus.backend === 'offline' || serviceStatus.ollama === 'offline' || serviceStatus.ldap === 'offline') && (
+                    {serviceStatus.backend === 'offline' && (
                         <div className="mt-4 space-y-2">
-                            {serviceStatus.backend === 'offline' && (
-                                <div className="bg-yellow-900/30 border border-yellow-600 text-yellow-200 p-3 rounded-lg">
-                                    <p className="text-sm">⚠️ Backend service is not responding. Please restart the application.</p>
-                                </div>
-                            )}
-                            {serviceStatus.ollama === 'offline' && (
-                                <div className="bg-orange-900/30 border border-orange-600 text-orange-200 p-3 rounded-lg">
-                                    <p className="text-sm">⚠️ Ollama service is not accessible. Ensure ollama serve and model loading on the external server.</p>
-                                </div>
-                            )}
-                            {serviceStatus.ldap === 'offline' && (
-                                <div className="bg-red-900/30 border border-red-600 text-red-200 p-3 rounded-lg">
-                                    <p className="text-sm">⚠️ LDAP service is not running. Authentication may not work.</p>
-                                </div>
-                            )}
+                            <div className="bg-yellow-900/30 border border-yellow-600 text-yellow-200 p-3 rounded-lg">
+                                <p className="text-sm">⚠️ Backend service is not responding. Please restart the application.</p>
+                            </div>
                         </div>
                     )}
 
@@ -531,6 +533,7 @@ const App: React.FC = () => {
                                 onLoginClick={() => setIsAuthModalOpen(true)}
                                 guidanceMode={guidanceMode}
                                 setGuidanceMode={setGuidanceMode}
+                                ragContentProvided={ragContentProvided}
                             />
                             <Tip />
                         </div>

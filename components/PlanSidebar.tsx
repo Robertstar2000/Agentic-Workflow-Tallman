@@ -56,7 +56,13 @@ export const PlanSidebar: React.FC<PlanSidebarProps> = ({ steps, progress, statu
                                 {icon}
                             </div>
                             <p className={`text-sm ${textClass}`}>
-                                <span className="font-bold">Step {index + 1}:</span> {typeof step === 'string' ? step : JSON.stringify(step)}
+                                <span className="font-bold">Step {index + 1}:</span> {
+                                    typeof step === 'string' 
+                                        ? step 
+                                        : (step && typeof step === 'object' && 'description' in step)
+                                            ? (step as { description: string }).description
+                                            : JSON.stringify(step)
+                                }
                             </p>
                         </li>
                     );

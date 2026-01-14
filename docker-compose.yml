@@ -1,0 +1,31 @@
+services:
+  frontend:
+    build: .
+    ports:
+      - "3250:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build: ./server
+    ports:
+      - "3251:3231"
+    env_file:
+      - .env.docker
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3231/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

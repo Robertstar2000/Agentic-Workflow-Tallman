@@ -12,13 +12,15 @@ export interface ProviderSettings {
 }
 
 /**
- * Defines the overall LLM settings for the application, using Ollama only.
+ * Defines the overall LLM settings for the application.
  */
 export interface LLMSettings {
-    /** The currently active LLM provider (always Ollama). */
-    provider: 'ollama';
+    /** The currently active LLM provider. */
+    provider: 'ollama' | 'gemini';
     /** Settings for the Ollama provider. */
-    ollama: ProviderSettings;
+    ollama?: ProviderSettings;
+    /** Settings for the Gemini provider. */
+    gemini?: ProviderSettings;
 }
 
 /**

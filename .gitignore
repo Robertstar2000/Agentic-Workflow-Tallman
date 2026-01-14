@@ -24,3 +24,31 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Database files (sensitive data)
+*.db
+*.sqlite
+*.sqlite3
+server/saws.db
+server/data/*.db
+
+# Docker volumes and secrets
+docker-secrets/
+*.pem
+*.key
+*.crt
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup directories
+*_backup/
+server/server_src_backup/
+server_src_backup/
+
+# Data directory (may contain sensitive data)
+data/
+
+# Test files
+test-*.js

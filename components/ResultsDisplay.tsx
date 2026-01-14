@@ -3,8 +3,69 @@ import React, { useState } from 'react';
 import type { WorkflowState, WorkflowStatus, Artifact } from '../types';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { CheckCircleIcon, ExclamationIcon, SpinnerIcon, XCircleIcon, DownloadIcon, MapIcon, CogIcon, DownloadAllIcon, TerminalIcon, ClipboardListIcon, PlayIcon } from './icons';
+import { CheckCircleIcon, ExclamationIcon, SpinnerIcon, XCircleIcon, DownloadIcon, MapIcon, CogIcon, DownloadAllIcon, TerminalIcon, ClipboardListIcon, PlayIcon, EyeIcon, XIcon } from './icons';
 import { parseAndSanitizeMarkdown } from '../utils/markdown';
+
+/**
+ * ViewModal Component - Displays artifact content in a large modal with word wrapping and scrolling.
+ */
+const ViewModal: React.FC<{ artifact: Artifact | null; isOpen: boolean; onClose: () => void }> = ({ artifact, isOpen, onClose }) => {
+    if (!isOpen || !artifact) return null;
+    
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+            <div 
+                className="bg-card-bg border border-border-muted rounded-xl w-[90vw] max-w-4xl max-h-[85vh] flex flex-col shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between p-4 border-b border-border-muted">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-slate-900 rounded-md">
+                            <span className="text-xs font-mono font-bold text-text-muted">
+                                {artifact.key.split('.').pop()?.toUpperCase() || 'FILE'}
+                            </span>
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-text-primary">{artifact.key}</h3>
+                            <p className="text-xs text-text-muted">{artifact.value.length.toLocaleString()} characters</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={onClose}
+                        className="p-2 rounded-lg hover:bg-white/10 transition-colors text-text-muted hover:text-text-primary"
+                        aria-label="Close modal"
+                    >
+                        <XIcon className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                {/* Content */}
+                <div className="flex-1 overflow-auto p-4">
+                    <pre className="bg-slate-950 p-4 rounded-lg text-sm font-mono text-green-400 border border-border-muted whitespace-pre-wrap break-words overflow-x-hidden">
+                        {artifact.value}
+                    </pre>
+                </div>
+                
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-3 p-4 border-t border-border-muted">
+                    <button
+                        onClick={() => navigator.clipboard.writeText(artifact.value)}
+                        className="px-4 py-2 text-sm bg-white/10 hover:bg-white/20 rounded-lg text-text-secondary transition-colors"
+                    >
+                        Copy to Clipboard
+                    </button>
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm bg-primary-start hover:bg-primary-end rounded-lg text-white transition-colors"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 /**
  * Triggers a file download in the browser.
@@ -207,6 +268,20 @@ const DownloadButton: React.FC<{ onDownload: () => void; }> = ({ onDownload }) =
 export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) => {
     type Tab = 'result' | 'plan' | 'requirements' | 'support' | 'log' | 'json';
     const [activeTab, setActiveTab] = useState<Tab>('result');
+    
+    // ViewModal state management
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
+    
+    const handleViewArtifact = (artifact: Artifact) => {
+        setSelectedArtifact(artifact);
+        setViewModalOpen(true);
+    };
+    
+    const handleCloseViewModal = () => {
+        setViewModalOpen(false);
+        setSelectedArtifact(null);
+    };
     
     const resultArtifactFallback = state.state.artifacts.find(a => a.key?.toLowerCase().startsWith('result')) 
         || state.state.artifacts.find(a => a.key?.toLowerCase() === 'readme.md');
@@ -418,6 +493,14 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                                             <p className="font-medium text-sm text-text-primary truncate" title={artifact.key}>{artifact.key}</p>
                                         </div>
                                         <div className="flex items-center gap-1">
+                                            <button 
+                                                onClick={() => handleViewArtifact(artifact)} 
+                                                className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-blue-400 hover:text-blue-300" 
+                                                aria-label="View artifact"
+                                                title="View artifact content"
+                                            >
+                                                <EyeIcon className="w-5 h-5" />
+                                            </button>
                                             {artifact.key.toLowerCase() === 'index.html' && (
                                                  <button onClick={() => handlePreviewArtifact(artifact)} className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-primary-end" aria-label="Preview">
                                                     <PlayIcon className="w-5 h-5" />
@@ -504,6 +587,13 @@ export const ResultsDisplay: React.FC<{ state: WorkflowState }> = ({ state }) =>
                     </ResultCard>
                 )}
             </div>
+            
+            {/* ViewModal for artifact content */}
+            <ViewModal 
+                artifact={selectedArtifact} 
+                isOpen={viewModalOpen} 
+                onClose={handleCloseViewModal} 
+            />
         </div>
     );
 };

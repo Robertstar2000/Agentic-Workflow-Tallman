@@ -17,8 +17,8 @@ type TestStatus = 'idle' | 'testing' | 'success' | 'error';
  * Props for the ProviderSettingsForm component.
  */
 interface ProviderSettingsFormProps {
-    /** The key of the provider being configured (always 'ollama'). */
-    providerKey: 'ollama';
+    /** The key of the provider being configured. */
+    providerKey: 'ollama' | 'gemini';
     /** The current settings for this provider. */
     settings: ProviderSettings;
     /** Callback to update the provider's settings. */
@@ -30,56 +30,102 @@ interface ProviderSettingsFormProps {
 }
 
 /**
- * A form for configuring the settings of Ollama.
+ * A form for configuring the settings of a provider.
  * @param {ProviderSettingsFormProps} props - The component props.
  */
 const ProviderSettingsForm: React.FC<ProviderSettingsFormProps> = ({ providerKey, settings, onChange, onTest, testStatus }) => {
-    return (
-        <div className="space-y-4 pt-4 border-t border-border-muted animate-fade-in">
-            <div>
-                <label htmlFor={`${providerKey}-baseURL`} className="block text-sm font-medium text-text-secondary mb-1">Endpoint URL</label>
-                <input
-                    type="text"
-                    id={`${providerKey}-baseURL`}
-                    value={settings.baseURL || ''}
-                    onChange={(e) => onChange({ ...settings, baseURL: e.target.value })}
-                    placeholder="http://10.10.20.24:11434"
-                    className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
-                />
+    if (providerKey === 'ollama') {
+        return (
+            <div className="space-y-4 pt-4 border-t border-border-muted animate-fade-in">
+                <div>
+                    <label htmlFor={`${providerKey}-baseURL`} className="block text-sm font-medium text-text-secondary mb-1">Endpoint URL</label>
+                    <input
+                        type="text"
+                        id={`${providerKey}-baseURL`}
+                        value={settings.baseURL || ''}
+                        onChange={(e) => onChange({ ...settings, baseURL: e.target.value })}
+                        placeholder="http://10.10.20.24:11434"
+                        className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
+                    />
+                </div>
+                <div>
+                    <label htmlFor={`${providerKey}-model`} className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
+                    <input
+                        type="text"
+                        id={`${providerKey}-model`}
+                        value={settings.model}
+                        onChange={(e) => onChange({ ...settings, model: e.target.value })}
+                        placeholder="e.g., llama3.3:latest"
+                        className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
+                    />
+                </div>
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onTest}
+                        disabled={testStatus === 'testing'}
+                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-border-muted rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                    >
+                        {testStatus === 'testing' ? (
+                            <>
+                                <SpinnerIcon className="w-4 h-4 animate-spin" />
+                                Testing...
+                            </>
+                        ) : "Test Connection"}
+                    </button>
+                    {testStatus === 'success' && <CheckCircleIcon className="w-6 h-6 text-success" />}
+                    {testStatus === 'error' && <XCircleIcon className="w-6 h-6 text-error" />}
+                </div>
             </div>
-            <div>
-                <label htmlFor={`${providerKey}-model`} className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
-                <input
-                    type="text"
-                    id={`${providerKey}-model`}
-                    value={settings.model}
-                    onChange={(e) => onChange({ ...settings, model: e.target.value })}
-                    placeholder="e.g., llama3.3:latest"
-                    className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
-                />
+        );
+    } else if (providerKey === 'gemini') {
+        return (
+            <div className="space-y-4 pt-4 border-t border-border-muted animate-fade-in">
+                <div>
+                    <label htmlFor={`${providerKey}-apiKey`} className="block text-sm font-medium text-text-secondary mb-1">API Key</label>
+                    <input
+                        type="password"
+                        id={`${providerKey}-apiKey`}
+                        value={settings.apiKey || ''}
+                        onChange={(e) => onChange({ ...settings, apiKey: e.target.value })}
+                        placeholder="Enter your Gemini API key"
+                        className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
+                    />
+                </div>
+                <div>
+                    <label htmlFor={`${providerKey}-model`} className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
+                    <input
+                        type="text"
+                        id={`${providerKey}-model`}
+                        value={settings.model}
+                        onChange={(e) => onChange({ ...settings, model: e.target.value })}
+                        placeholder="e.g., gemini-1.5-flash"
+                        className="w-full p-2 bg-slate-900/70 border border-border-muted rounded-lg focus:ring-2 focus:ring-primary-start"
+                    />
+                </div>
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={onTest}
+                        disabled={testStatus === 'testing'}
+                        className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-border-muted rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+                    >
+                        {testStatus === 'testing' ? (
+                            <>
+                                <SpinnerIcon className="w-4 h-4 animate-spin" />
+                                Testing...
+                            </>
+                        ) : "Test Connection"}
+                    </button>
+                    {testStatus === 'success' && <CheckCircleIcon className="w-6 h-6 text-success" />}
+                    {testStatus === 'error' && <XCircleIcon className="w-6 h-6 text-error" />}
+                </div>
             </div>
-            <div className="flex items-center gap-4">
-                <button
-                    onClick={onTest}
-                    disabled={testStatus === 'testing'}
-                    className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold border border-border-muted rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
-                >
-                    {testStatus === 'testing' ? (
-                        <>
-                            <SpinnerIcon className="w-4 h-4 animate-spin" />
-                            Testing...
-                        </>
-                    ) : "Test Connection"}
-                </button>
-                {testStatus === 'success' && <CheckCircleIcon className="w-6 h-6 text-success" />}
-                {testStatus === 'error' && <XCircleIcon className="w-6 h-6 text-error" />}
-            </div>
-        </div>
-    );
+        );
+    }
+    return null;
 };
 
 /**
- * A modal component for configuring Ollama settings.
+ * A modal component for configuring LLM provider settings.
  * Settings are automatically saved to local storage.
  * @param {SettingsModalProps} props - The component props.
  */
@@ -88,6 +134,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
     const [testStatus, setTestStatus] = useState<TestStatus>('idle');
     const [testRunnerStatus, setTestRunnerStatus] = useState<'idle' | 'running' | 'finished'>('idle');
     const [testResults, setTestResults] = useState<TestResult[]>([]);
+    const [currentProviderKey, setCurrentProviderKey] = useState<'ollama' | 'gemini'>(settings.provider);
 
     useEffect(() => {
         const handleEscape = (event: KeyboardEvent) => {
@@ -115,8 +162,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
         };
     }, [onClose, settings]);
 
-    const handleProviderSettingsChange = (newProviderSettings: ProviderSettings) => {
-        setSettings({ ...settings, ollama: newProviderSettings });
+    const handleProviderChange = (provider: 'ollama' | 'gemini') => {
+        setCurrentProviderKey(provider);
+        setSettings({ ...settings, provider });
+    };
+
+    const handleProviderSettingsChange = (providerKey: 'ollama' | 'gemini') => (newProviderSettings: ProviderSettings) => {
+        setSettings({ ...settings, [providerKey]: newProviderSettings });
     };
 
     const handleTestConnection = async () => {
@@ -161,15 +213,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ settings, setSetti
                 </div>
 
                 <div className="space-y-4">
-                    <h3 className="text-lg font-semibold">Ollama Settings</h3>
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">AI Provider</label>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleProviderChange('gemini')}
+                                className={`flex-1 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                                    settings.provider === 'gemini'
+                                        ? 'bg-primary-start text-white'
+                                        : 'bg-slate-900/70 border border-border-muted text-text-secondary hover:bg-white/10'
+                                }`}
+                            >
+                                Gemini
+                            </button>
+                            <button
+                                onClick={() => handleProviderChange('ollama')}
+                                className={`flex-1 px-3 py-2 text-sm font-semibold rounded-lg transition-colors ${
+                                    settings.provider === 'ollama'
+                                        ? 'bg-primary-start text-white'
+                                        : 'bg-slate-900/70 border border-border-muted text-text-secondary hover:bg-white/10'
+                                }`}
+                            >
+                                Ollama
+                            </button>
+                        </div>
+                    </div>
 
-                    <ProviderSettingsForm
-                        providerKey="ollama"
-                        settings={settings.ollama}
-                        onChange={handleProviderSettingsChange}
-                        onTest={handleTestConnection}
-                        testStatus={testStatus}
-                    />
+                    {settings.provider === 'gemini' && (
+                        <div>
+                            <h3 className="text-lg font-semibold">Gemini Settings</h3>
+                            <ProviderSettingsForm
+                                providerKey="gemini"
+                                settings={settings.gemini || { model: 'gemini-1.5-flash', apiKey: '' }}
+                                onChange={handleProviderSettingsChange('gemini')}
+                                onTest={handleTestConnection}
+                                testStatus={testStatus}
+                            />
+                        </div>
+                    )}
+
+                    {settings.provider === 'ollama' && (
+                        <div>
+                            <h3 className="text-lg font-semibold">Ollama Settings</h3>
+                            <ProviderSettingsForm
+                                providerKey="ollama"
+                                settings={settings.ollama || { model: 'llama3.3:latest', baseURL: 'http://10.10.20.24:11434' }}
+                                onChange={handleProviderSettingsChange('ollama')}
+                                onTest={handleTestConnection}
+                                testStatus={testStatus}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div className="mt-6 pt-6 border-t border-border-muted">

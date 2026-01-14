@@ -1,21 +1,27 @@
-import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
+import { getSession } from '../database/init.js';
 
 export interface AuthRequest extends Request {
   userId?: number;
+  user?: any;
 }
 
-export function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
+export async function authenticateToken(req: AuthRequest, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
-    return res.sendStatus(401);
+    return res.status(401).json({ error: 'No token provided' });
   }
 
-  jwt.verify(token, process.env.JWT_SECRET!, (err: any, decoded: any) => {
-    if (err) return res.sendStatus(403);
-    req.userId = decoded.userId;
+  try {
+    const session = await getSession(token);
+    if (!session) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    req.user = session;
+    req.userId = session.user_id;
     next();
-  });
+  } catch (err) {
+    console.error('Auth error:', err);
+    res.status(500).json({ error: 'Authentication error' });
+  }
 }

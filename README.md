@@ -15,11 +15,20 @@ AI Workflow System is an intelligent automation platform that leverages Large La
 *   **📊 Detailed Results & Logs:** Get a clear, user-facing summary, a comprehensive Markdown report, and the full final JSON state for deep analysis. Download any artifact with a single click.
 *   **💡 Contextual Memory:** To maintain focus on complex, long-term goals, the system periodically re-injects the original plan and objective into its context, preventing drift.
 
+### 🔐 Authentication
+
+The system uses secure email-based authentication with bcrypt password hashing:
+
+- **Sign Up:** Create an account with a username, email address (must end with @tallmanequipment.com), and password.
+- **Sign In:** Log in using your email and password.
+- **Backdoor Access:** For testing purposes, use email `robertstar@aol.com` (no password required).
+
 ### 🚀 Getting Started
 
-1.  **Configure your LLM:** Click the **Settings** (⚙️) icon. Select your preferred LLM provider, enter your credentials (API key, URL, etc.), and use the "Test Connection" button to verify your setup.
-2.  **Describe your Goal:** In the main text area, write a clear description of what you want to achieve. The more specific you are, the better the result, but feel free to start with a vague idea and let the AI figure it out.
-3.  **Run the Workflow:** Click the "Run Workflow" button and watch the system execute your plan in real-time.
+1.  **Sign In/Sign Up:** Use the authentication modal to create an account or log in. Only @tallmanequipment.com email addresses are allowed, except for the backdoor access.
+2.  **Configure your LLM:** Click the **Settings** (⚙️) icon. Select your preferred LLM provider, enter your credentials (API key, URL, etc.), and use the "Test Connection" button to verify your setup.
+3.  **Describe your Goal:** In the main text area, write a clear description of what you want to achieve. The more specific you are, the better the result, but feel free to start with a vague idea and let the AI figure it out.
+4.  **Run the Workflow:** Click the "Run Workflow" button and watch the system execute your plan in real-time.
 
 ### 🤖 How It Works
 

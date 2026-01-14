@@ -119,9 +119,17 @@ Your context window is limited. To ensure the workflow runs smoothly, you MUST a
     -   **If Step Complete:** Save Worker artifacts and move to the next step.
     -   **If goal is fully achieved on the last step, perform final steps:**
         1. **Categorize Result:** Determine if the primary output is 'code', 'text', or 'table'. Set the \`resultType\` field accordingly (mandatory for completion).
-        2. **Create README:** Create a comprehensive \`README.md\` artifact. It must include: title + one-sentence summary; Overview; Usage (if 'code', include install \`npm install\` and run \`npm run dev\`; if 'text', explain findings; if 'table', explain how to consume the .csv); Technical Details/Methodology if applicable.
+        2. **Create README:** Create a comprehensive \`README.md\` artifact following the **80/20 rule**:
+           - **80% CONTENT**: The bulk of README.md must directly answer the user's goal. Use BOTH your LLM knowledge AND any internet_results/rag_results to provide substantive, informative content that addresses what the user asked for. Include facts, data, explanations, analysis, code, or whatever deliverables satisfy the goal.
+           - **20% PROCESS**: Only briefly describe how the goal was achieved (methodology, tools used, steps taken). This should be a short section at the end, not the focus.
+           - Structure: Title + executive summary → Main content sections answering the goal → Brief methodology/process section at end.
+           - For research/analysis goals: Include the actual findings, data, insights, and conclusions prominently.
+           - For code goals: Include the actual code with explanations of what it does.
+           - For Q&A goals: Include the actual answer with supporting evidence.
         3. **Update State:** Add the new \`README.md\` artifact to the \`artifacts\` array.
-        4. **Set Final Outputs:** Set \`finalResultMarkdown\` to exactly the README content. Generate a brief, user-friendly \`finalResultSummary\` describing what the code/data/text does and key outcomes; if it's a Q&A or analysis, include the actual answer or key findings.
+        4. **Set Final Outputs:** 
+           - Set \`finalResultMarkdown\` to exactly the README content (the full 80/20 report).
+           - Set \`finalResultSummary\` to a concise summary that directly answers the goal in 2-4 paragraphs. This should be the KEY FINDINGS, ANSWER, or DELIVERABLE - not a description of the process. If the goal was a question, include the answer. If it was research, include the key insights.
         5. **MANDATORY: Set Status:** Set \`status\` to "completed".
 
 **Current State:**
@@ -205,20 +213,62 @@ const _enforceRunLogFormat = (entries: RunLogEntry[]): RunLogEntry[] => {
 };
 
 const _autoAssembleReadme = (goal: string, artifacts: { key: string, value: string }[]): string => {
-    const ignoreKeys = ['rag_results', 'internet_results', 'notes', 'rag_query', 'internet_query'];
-    const filtered = artifacts.filter(a => {
+    // Process/internal artifacts to EXCLUDE from final result (20% process, not content)
+    const processArtifactPatterns = [
+        /^rag_/i, /^internet_/i, /notes/i, /query$/i,
+        /^plan\.md$/i, /^requirements\.md$/i,
+        /^step_\d+_(plan|refined|goal)/i,  // Process planning artifacts
+        /^step_\d+_requirement/i,           // Requirements artifacts (process)
+        /summary/i
+    ];
+    
+    // Content artifacts to PRIORITIZE for final result (80% content)
+    const contentArtifactPatterns = [
+        /^result\./i, /^final/i, /^readme\.md$/i,
+        /colors/i, /output/i, /answer/i, /findings/i
+    ];
+    
+    // Filter to only content artifacts, excluding process artifacts
+    const contentArtifacts = artifacts.filter(a => {
         const keyLower = (a.key || '').toLowerCase();
-        return !ignoreKeys.some(ignore => keyLower.includes(ignore)) && !/summary/i.test(keyLower);
+        // Exclude process artifacts
+        if (processArtifactPatterns.some(pattern => pattern.test(keyLower))) {
+            return false;
+        }
+        return true;
+    });
+    
+    // Prioritize content artifacts (those that match content patterns come first)
+    const prioritized = [...contentArtifacts].sort((a, b) => {
+        const aIsContent = contentArtifactPatterns.some(p => p.test(a.key));
+        const bIsContent = contentArtifactPatterns.some(p => p.test(b.key));
+        if (aIsContent && !bIsContent) return -1;
+        if (!aIsContent && bIsContent) return 1;
+        return 0;
     });
 
-    const sections = filtered.map(a => {
+    const sections = prioritized.map(a => {
         const header = a.key;
-        const body = (a.value || '').trim();
+        // Ensure value is a string, not [object Object]
+        let body = '';
+        if (a.value === null || a.value === undefined) {
+            body = '';
+        } else if (typeof a.value === 'string') {
+            body = a.value.trim();
+        } else if (typeof a.value === 'object') {
+            try {
+                body = JSON.stringify(a.value, null, 2);
+            } catch {
+                body = String(a.value);
+            }
+        } else {
+            body = String(a.value).trim();
+        }
         if (!body) return '';
         return `## ${header}\n${body}\n`;
     }).filter(Boolean);
 
-    return `# Workflow Report\n\n**Goal:** ${goal}\n\n${sections.join('\n')}`;
+    return `# ${goal}\n\n${sections.join('\n')}`;
 };
 
 const _enforceFinalStepRules = (state: WorkflowState): WorkflowState => {
@@ -322,6 +372,9 @@ const _validateArtifactsAndFinals = (previousState: WorkflowState, newState: Wor
             addQAWarning(
                 `Step ${stepNum}: Final summary missing. Summarize README.md into finalResultSummary and finalResultMarkdown, and create a summary artifact (e.g., result_summary.md) for UI display.`
             );
+        } else {
+            // All final artifacts are present, mark as completed
+            newState.status = 'completed';
         }
     }
 
@@ -370,11 +423,21 @@ const _parseAndValidateWorkflow = (responseData: any, fallbackGoal: string): Wor
     if (!responseData || typeof responseData.response !== 'string') {
         throw new Error('LLM response missing "response" field');
     }
+    console.log('LLM response:', responseData.response);
+    let jsonStr = responseData.response.trim();
+
+    // Extract JSON from markdown code blocks if present
+    if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
     let parsed: WorkflowState;
     try {
-        parsed = JSON.parse(responseData.response);
+        parsed = JSON.parse(jsonStr);
     } catch (err) {
-        throw new Error('LLM returned invalid JSON');
+        throw new Error(`LLM returned invalid JSON: ${err.message}`);
     }
     return _normalizeWorkflowState(parsed, fallbackGoal);
 };
@@ -385,9 +448,13 @@ const _detectStepNumber = (state: WorkflowState): number => {
     return 0;
 };
 
-const _runOllamaWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch): Promise<WorkflowState> => {
-    const baseURL = settings.baseURL || OLLAMA_CONFIG.host;
-    const url = `${baseURL}/api/generate`;
+const _runOllamaWorkflow = async (currentState: WorkflowState, settings: ProviderSettings, ragContent: string | undefined, fetchFn: typeof fetch, provider: string): Promise<WorkflowState> => {
+    let baseURL = settings.baseURL || OLLAMA_CONFIG.host;
+    let url = `${baseURL}/api/generate`;
+    if (provider === 'gemini') {
+        baseURL = 'http://localhost:3251/api/ai';
+        url = `${baseURL}/generate`;
+    }
     const prompt = getSystemPrompt(currentState, ragContent);
     const stepNum = _detectStepNumber(currentState);
     const totalSteps = currentState.state.steps?.length || 0;
@@ -406,6 +473,10 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
         }
     };
 
+    // Internal API calls don't need authentication
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    // Note: No Authorization header needed for internal backend-to-backend calls
+
     let lastError: Error | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -416,13 +487,13 @@ const _runOllamaWorkflow = async (currentState: WorkflowState, settings: Provide
             const response = await fetchFn(url, {
                 method: 'POST',
                 body: JSON.stringify(body),
-                headers: { 'Content-Type': 'application/json' },
+                headers,
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
             if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`Ollama API error (${response.status}): ${errorText}`);
+                throw new Error(`AI API error (${response.status}): ${errorText}`);
             }
             const responseData = await response.json();
             return _parseAndValidateWorkflow(responseData, currentState.goal);
@@ -503,8 +574,11 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
     for (let attempt = 0; attempt < attempts; attempt++) {
         try {
             switch (provider) {
-                case 'ollama':
-                    newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn);
+                // case 'ollama': // Commented out Ollama usage but not deleted
+                //     newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn, provider);
+                //     break;
+                case 'gemini':
+                    newState = await _runOllamaWorkflow(currentState, providerSettings, ragContent, fetchFn, provider);
                     break;
                 default:
                     throw new Error(`Unsupported provider: ${provider}`);
@@ -565,25 +639,95 @@ export const runWorkflowIteration = async (currentState: WorkflowState, settings
         const query = internetQueryArtifact.value;
         
         try {
-            const searchUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`;
+            // Use backend endpoint to avoid CORS issues
+            // Backend searches both DuckDuckGo (8 results) and Wikipedia (8 results)
+            // NOTE: No auth header for search - endpoint allows unauthenticated access
+            const searchUrl = '/api/ai/test-search';
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 12000);
-            const response = await fetchFn(searchUrl, { signal: controller.signal });
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            
+            console.log(`[Internet Search] Executing search for: "${query}"`);
+            
+            const response = await fetchFn(searchUrl, { 
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query }),
+                signal: controller.signal 
+            });
             clearTimeout(timeoutId);
+            
+            // Check if response is OK before parsing
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+            
             const data = await response.json();
-            const related = Array.isArray(data.RelatedTopics) ? data.RelatedTopics : [];
-            const snippets = related
-                .flatMap((item: any) => item?.Text ? [item.Text] : (Array.isArray(item?.Topics) ? item.Topics.map((t: any) => t?.Text) : []))
-                .filter(Boolean)
-                .slice(0, 10);
-            const results = snippets.length > 0 ? snippets.join('\n\n') : 'No results found.';
-            newState.state.artifacts.push({ key: 'internet_results', value: results });
-            newState.state.notes = _appendNote(newState.state.notes, `Internet search completed for "${query}". Collected ${snippets.length || 0} snippets; QA validate relevance.`);
-            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search for "${query}" returned ${snippets.length || 0} snippets` }];
+            console.log(`[Internet Search] Response data:`, JSON.stringify(data).slice(0, 500));
+            
+            // Check for API error response
+            if (data.error) {
+                throw new Error(data.error + (data.details ? `: ${data.details}` : ''));
+            }
+            
+            // Format results from backend response (DuckDuckGo + Wikipedia)
+            let resultsText = `# Internet Search Results for: "${query}"\n\n`;
+            
+            if (data.abstract?.text) {
+                resultsText += `## Summary\n${data.abstract.text}\n\n`;
+            }
+            
+            // Get all results (may not have source field in some cases)
+            const allResults = data.results || [];
+            const ddgResults = allResults.filter((r: any) => r.source === 'DuckDuckGo');
+            const wikiResults = allResults.filter((r: any) => r.source === 'Wikipedia');
+            const otherResults = allResults.filter((r: any) => !r.source || (r.source !== 'DuckDuckGo' && r.source !== 'Wikipedia'));
+            
+            if (ddgResults.length > 0) {
+                resultsText += `## DuckDuckGo Results (${ddgResults.length} found)\n\n`;
+                ddgResults.forEach((r: { text: string; url: string; source?: string }, idx: number) => {
+                    resultsText += `${idx + 1}. ${r.text}\n   URL: ${r.url}\n\n`;
+                });
+            }
+            
+            if (wikiResults.length > 0) {
+                resultsText += `## Wikipedia Results (${wikiResults.length} found)\n\n`;
+                wikiResults.forEach((r: { text: string; url: string; source?: string }, idx: number) => {
+                    resultsText += `${idx + 1}. ${r.text}\n   URL: ${r.url}\n\n`;
+                });
+            }
+            
+            // Handle results without source (fallback)
+            if (otherResults.length > 0 && ddgResults.length === 0 && wikiResults.length === 0) {
+                resultsText += `## Search Results (${otherResults.length} found)\n\n`;
+                otherResults.forEach((r: { text: string; url: string }, idx: number) => {
+                    resultsText += `${idx + 1}. ${r.text}\n   URL: ${r.url}\n\n`;
+                });
+            }
+            
+            const totalResults = allResults.length;
+            
+            // Only use "No results" if truly no results
+            let finalResults: string;
+            if (totalResults === 0 && !data.abstract?.text) {
+                finalResults = `No results found for query: "${query}". Try broadening your search criteria or using different keywords.`;
+            } else {
+                finalResults = resultsText.trim();
+            }
+            
+            console.log(`[Internet Search] Final results (${totalResults} items):`, finalResults.slice(0, 300));
+            
+            newState.state.artifacts.push({ key: 'internet_results', value: finalResults });
+            newState.state.notes = _appendNote(newState.state.notes, `Internet search completed for "${query}". Found ${totalResults} results; QA validate relevance.`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search for "${query}" returned ${totalResults} results` }];
         } catch (e) {
-            newState.state.artifacts.push({ key: 'internet_results', value: 'Internet search failed. Please try a different query.' });
-            newState.state.notes = _appendNote(newState.state.notes, `Internet search failed for "${query}".`);
-            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search failed for "${query}"` }];
+            const errorMsg = e instanceof Error ? e.message : 'Unknown error';
+            console.error(`[Internet Search] Error:`, errorMsg);
+            newState.state.artifacts.push({ key: 'internet_results', value: `Internet search failed: ${errorMsg}. Please try a different query or broaden your search criteria.` });
+            newState.state.notes = _appendNote(newState.state.notes, `Internet search failed for "${query}": ${errorMsg}. QA: Consider recreating with broader search criteria.`);
+            newState.runLog = [...newState.runLog, { iteration: iterIndex, agent: 'Worker', summary: `Internet search failed for "${query}": ${errorMsg}` }];
         }
     }
 
@@ -608,13 +752,13 @@ export const testProviderConnection = async (settings: LLMSettings, fetchOverrid
 
     try {
         switch (provider) {
-            case 'ollama':
-                const baseURL = providerSettings.baseURL || OLLAMA_CONFIG.host;
-                const ollamaUrl = `${baseURL}/api/tags`;
-                const ollamaResp = await fetchFn(ollamaUrl);
-                if (!ollamaResp.ok) throw new Error(`Ollama connection failed: ${ollamaResp.statusText}`);
-                const ollamaData = await ollamaResp.json();
-                return Array.isArray(ollamaData.models);
+            // case 'ollama': // Commented out Ollama usage but not deleted
+            //     const baseURL = providerSettings.baseURL || OLLAMA_CONFIG.host;
+            //     const ollamaUrl = `${baseURL}/api/tags`;
+            //     const ollamaResp = await fetchFn(ollamaUrl);
+            //     if (!ollamaResp.ok) throw new Error(`Ollama connection failed: ${ollamaResp.statusText}`);
+            //     const ollamaData = await ollamaResp.json();
+            //     return Array.isArray(ollamaData.models);
             default:
                 return false;
         }

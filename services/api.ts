@@ -1,8 +1,8 @@
-const API_BASE = 'http://localhost:3560/api';
+const API_BASE = 'http://localhost:3251/api';
 
 class ApiClient {
   private getAuthHeaders() {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('token');
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
@@ -14,17 +14,17 @@ class ApiClient {
     });
     const data = await response.json();
     if (response.ok) {
-      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
     }
     return data;
   }
 
-  async register(username: string, password: string) {
+  async register(username: string, email: string, password: string) {
     const response = await fetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, email, password })
     });
     return response.json();
   }
